@@ -30,10 +30,18 @@ enum class EditorKey
     Escape,
     Enter,
     Tab,
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
     Undo,
     Redo,
     Copy,
+    Cut,
     Paste,
+    SelectAll,
 };
 
 struct EditorInputEvent
@@ -46,10 +54,11 @@ struct EditorInputEvent
     float x = 0.0f;
     float y = 0.0f;
 
-    // Modifiers held during a mouse event (alt = break links,
-    // ctrl = insert reroute waypoint).
+    // Modifiers held during mouse and key events (alt = break links,
+    // ctrl = insert reroute waypoint, shift = extend selection).
     bool alt = false;
     bool ctrl = false;
+    bool shift = false;
 
     // Consecutive click count for MouseDown (2 = double click).
     int clicks = 1;

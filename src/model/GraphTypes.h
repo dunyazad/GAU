@@ -196,6 +196,32 @@ inline const char* PinDirectionToString(PinDirection direction)
     return direction == PinDirection::Input ? "in" : "out";
 }
 
+// Case-insensitive (ASCII) pin type lookup ("exec"/"bool"/"int"/
+// "float"/"string"/"object"). Returns false for unknown names.
+inline bool PinTypeFromString(const std::string& text, PinType& outType)
+{
+    std::string lower = text;
+    for (char& c : lower) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (lower == "exec") {
+        outType = PinType::Exec;
+    } else if (lower == "bool") {
+        outType = PinType::Bool;
+    } else if (lower == "int") {
+        outType = PinType::Int;
+    } else if (lower == "float") {
+        outType = PinType::Float;
+    } else if (lower == "string") {
+        outType = PinType::String;
+    } else if (lower == "object") {
+        outType = PinType::Object;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 // Zero value of the Value alternative matching a pin/property type.
 // Exec/Object have no value representation and map to false/0-like bool.
 inline Value MakeDefaultValue(PinType type)

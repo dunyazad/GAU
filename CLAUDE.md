@@ -13,6 +13,8 @@
   - macOS/iOS: MetalNanoVG (ollix/MetalNanoVG)
 - 빌드: CMake (데스크톱), Xcode 프로젝트 (iOS)
 - JSON: nlohmann/json (external/nlohmann/json.hpp 단일 헤더 벤더링)
+- WASM 런타임: wasm3 (external/wasm3 벤더링) -- 커스텀 노드 함수 실행
+  - 함수 런타임 빌드는 공식 LLVM(clang, wasm32 타깃) 설치 필요 (선택)
 - 외부 의존성은 위 목록 외 추가 금지. 필요 시 먼저 사용자에게 확인할 것.
 
 ## 2. 코딩 컨벤션 (엄수)

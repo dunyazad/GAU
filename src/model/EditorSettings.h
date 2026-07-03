@@ -37,6 +37,10 @@ struct EditorSettings
     int windowHeight = 720;
     bool windowMaximized = false;
 
+    // Path of a clang with the wasm32 target (official LLVM); empty
+    // means probe standard locations.
+    std::string clangPath;
+
     // Returns false when the file is missing or unreadable; the settings
     // keep their defaults in that case. Unknown JSON entries are ignored.
     bool LoadFromFile(const std::string& path);

@@ -30,6 +30,9 @@ struct ContextMenuAction
         // "Paste" was chosen; the caller pastes the clipboard at the
         // spawn position.
         Paste,
+        // "+ New Wasm Function..." was chosen; the caller opens the
+        // wasm function editor.
+        OpenFunctionEditor,
     };
 
     Type type = Type::None;
@@ -44,6 +47,7 @@ enum class ContextMenuRowKind
     Paste,
     AddComment,
     CreateNewClass,
+    NewWasmFunction,
 };
 
 // One display row of the menu list.

@@ -151,6 +151,10 @@ ContextMenuAction ContextMenu::HandleEvent(const EditorInputEvent& event)
                     action.type = ContextMenuAction::Type::OpenClassEditor;
                     Close();
                     break;
+                case ContextMenuRowKind::NewWasmFunction:
+                    action.type = ContextMenuAction::Type::OpenFunctionEditor;
+                    Close();
+                    break;
                 }
             }
         }
@@ -263,6 +267,10 @@ void ContextMenu::UpdateFilter()
     ContextMenuRow createNewRow;
     createNewRow.kind = ContextMenuRowKind::CreateNewClass;
     rows.push_back(createNewRow);
+
+    ContextMenuRow newFunctionRow;
+    newFunctionRow.kind = ContextMenuRowKind::NewWasmFunction;
+    rows.push_back(newFunctionRow);
 
     hoveredIndex = -1;
     UpdateListViewHeight();

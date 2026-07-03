@@ -1,7 +1,11 @@
 #include "platform/PlatformWindow.h"
 #include "platform/PlatformNVG.h"
+#include "platform/PlatformClipboard.h"
 #include "platform/PlatformConsole.h"
 #include "platform/PlatformFileDialog.h"
+#include "platform/PlatformProcess.h"
+#include "interaction/FunctionEditorDialog.h"
+#include "render/FunctionEditorRenderer.h"
 #include "render/Canvas.h"
 #include "render/GridRenderer.h"
 #include "render/SelectionRenderer.h"
@@ -22,6 +26,8 @@
 #include "interaction/ContextMenu.h"
 #include "interaction/ClassEditorDialog.h"
 #include "exec/ExecEngine.h"
+#include "exec/WasmApiHeader.h"
+#include "exec/WasmRuntime.h"
 #include "interaction/ActionMenu.h"
 #include "interaction/HitTest.h"
 #include "interaction/LogPanel.h"
@@ -41,6 +47,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -624,7 +631,7 @@ static void ProcessClassEditorAction(const ClassEditorAction& action, NodeGraph&
         // The dialog does not edit the exec binding; preserve it.
         const std::string execFnName = action.editTarget->GetExecFnName();
         if (!NodeClass::UpdateDynamic(action.editTarget, action.name, action.category,
-                                      action.pins, action.properties)) {
+                                      action.pins, action.properties, execFnName)) {
             std::printf("class editor: builtin class cannot be edited\n");
             return;
         }
@@ -728,6 +735,23 @@ static void LoadCustomNodeClasses()
 }
 
 static const char* EDITOR_SETTINGS_PATH = "editor_settings.json";
+
+// Custom wasm node functions: compiled modules and their C sources.
+static const char* WASM_MODULE_DIR = "wasm";
+static const char* WASM_SOURCE_DIR = "wasm_src";
+
+static void LoadWasmModules()
+{
+    std::vector<std::string> errors;
+    const int loadedCount =
+        WasmRuntime::Instance().LoadModulesFromDirectory(WASM_MODULE_DIR, errors);
+    for (const std::string& error : errors) {
+        std::printf("wasm: %s\n", error.c_str());
+    }
+    if (loadedCount > 0) {
+        std::printf("wasm: loaded %d module(s)\n", loadedCount);
+    }
+}
 
 // Directory holding auto-saved graphs of untitled documents so they
 // survive restarts without an explicit save.
@@ -926,6 +950,264 @@ static void CommitTabRename(TabRenameState& rename,
     doc.filePath = newPath.string();
     doc.displayName = newPath.filename().string();
     std::printf("renamed: %s\n", doc.filePath.c_str());
+}
+
+// Locates a clang with the wasm32 target: explicit setting first, then
+// the bundled toolchain shipped next to the app, then the official
+// LLVM install, then PATH. Bundling clang.exe + wasm-ld.exe under
+// tools/llvm/bin makes distributed builds self-contained.
+static std::string FindClangForWasm(const EditorSettings& settings)
+{
+    if (!settings.clangPath.empty()) {
+        return settings.clangPath;
+    }
+    std::error_code ec;
+    const char* candidates[] = {
+        "tools/llvm/bin/clang.exe",
+        "tools/clang.exe",
+        "C:/Program Files/LLVM/bin/clang.exe",
+    };
+    for (const char* candidate : candidates) {
+        if (std::filesystem::exists(candidate, ec)) {
+            return candidate;
+        }
+    }
+    return "clang";
+}
+
+static bool IsValidFunctionName(const std::string& name)
+{
+    if (name.empty()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < name.size(); ++i) {
+        const char c = name[i];
+        const bool alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+        const bool digit = (c >= '0' && c <= '9');
+        if (!(alpha || (i > 0 && digit))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Parses node interface directives from a wasm function source:
+//   // @node category=Pure
+//   // @in ax:float ay:float
+//   // @out x:float
+// Pin tokens are name:type; "_" as a name means unnamed (exec pins).
+// Returns true when at least one pin directive was found.
+static bool ParseWasmNodeDirectives(const std::string& source, std::vector<PinDef>& outPins,
+                                    std::string& outCategory)
+{
+    outPins.clear();
+    outCategory = "Function";
+    bool anyPins = false;
+
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        std::size_t lineEnd = source.find('\n', lineStart);
+        if (lineEnd == std::string::npos) {
+            lineEnd = source.size();
+        }
+        std::string line = source.substr(lineStart, lineEnd - lineStart);
+        lineStart = lineEnd + 1;
+
+        std::size_t position = line.find("// @");
+        if (position == std::string::npos) {
+            continue;
+        }
+        line = line.substr(position + 3);
+
+        PinDirection direction = PinDirection::Input;
+        bool pinLine = false;
+        if (line.rfind("@node", 0) == 0) {
+            const std::size_t categoryPos = line.find("category=");
+            if (categoryPos != std::string::npos) {
+                std::string category = line.substr(categoryPos + 9);
+                const std::size_t spacePos = category.find(' ');
+                if (spacePos != std::string::npos) {
+                    category = category.substr(0, spacePos);
+                }
+                if (!category.empty()) {
+                    outCategory = category;
+                }
+            }
+            continue;
+        } else if (line.rfind("@in", 0) == 0) {
+            direction = PinDirection::Input;
+            line = line.substr(3);
+            pinLine = true;
+        } else if (line.rfind("@out", 0) == 0) {
+            direction = PinDirection::Output;
+            line = line.substr(4);
+            pinLine = true;
+        }
+        if (!pinLine) {
+            continue;
+        }
+
+        std::string token;
+        line += ' ';
+        for (char c : line) {
+            if (c == ' ' || c == '\t' || c == '\r') {
+                if (!token.empty()) {
+                    const std::size_t colonPos = token.find(':');
+                    if (colonPos != std::string::npos) {
+                        PinDef pin;
+                        pin.direction = direction;
+                        pin.name = token.substr(0, colonPos);
+                        if (pin.name == "_") {
+                            pin.name.clear();
+                        }
+                        if (PinTypeFromString(token.substr(colonPos + 1), pin.type)) {
+                            outPins.push_back(std::move(pin));
+                            anyPins = true;
+                        }
+                    }
+                    token.clear();
+                }
+            } else {
+                token += c;
+            }
+        }
+    }
+    return anyPins;
+}
+
+// Creates or updates the node class driven by a wasm function's
+// directives and persists it to custom_nodes.json.
+static void RegisterWasmNodeClass(const std::string& name, const std::string& category,
+                                  std::vector<PinDef> pins,
+                                  std::vector<std::unique_ptr<Document>>& documents,
+                                  std::vector<std::string>& logLines)
+{
+    const std::string execFn = "wasm:" + name;
+    const NodeClass* existing = NodeClass::FindByName(name.c_str());
+    std::string error;
+
+    if (existing == nullptr) {
+        NodeClass::AdoptDynamic(std::make_unique<NodeClass>(name, category, pins,
+                                                            std::vector<PropertyDef>{}, execFn));
+        if (!AppendNodeClassToFile("custom_nodes.json", name, category, pins, {}, execFn,
+                                   error)) {
+            std::printf("custom_nodes.json: %s\n", error.c_str());
+        }
+        logLines.push_back("node class registered: " + name);
+        return;
+    }
+    if (!existing->IsDynamic()) {
+        logLines.push_back("warning: builtin class '" + name + "' cannot be bound to wasm");
+        return;
+    }
+
+    std::vector<PropertyDef> keptProperties = existing->GetProperties();
+    NodeClass::UpdateDynamic(existing, name, category, pins, keptProperties, execFn);
+    for (std::unique_ptr<Document>& doc : documents) {
+        doc->graph.RebuildNodesOfClass(*existing);
+    }
+    if (!UpdateNodeClassInFile("custom_nodes.json", name, name, category, pins,
+                               keptProperties, execFn, error)) {
+        if (!AppendNodeClassToFile("custom_nodes.json", name, category, pins,
+                                   keptProperties, execFn, error)) {
+            std::printf("custom_nodes.json: %s\n", error.c_str());
+        }
+    }
+    logLines.push_back("node class updated: " + name);
+}
+
+// Writes the edited source, compiles it to wasm with clang and reloads
+// the modules. Node directives in the source create/update the class.
+// Build output goes to the log panel; the dialog stays open with a
+// status message on failure.
+static void BuildWasmFunction(const FunctionEditorAction& action,
+                              const EditorSettings& settings,
+                              FunctionEditorDialog& functionEditor,
+                              std::vector<std::unique_ptr<Document>>& documents,
+                              std::vector<std::string>& logLines)
+{
+    if (!IsValidFunctionName(action.name)) {
+        functionEditor.SetStatus("Invalid function name (identifier expected)");
+        return;
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories(WASM_SOURCE_DIR, ec);
+    std::filesystem::create_directories(WASM_MODULE_DIR, ec);
+
+    // Refresh the generated API header so runtime-added classes are
+    // usable as types in the source.
+    std::string headerError;
+    if (!WriteWasmApiHeader(std::string(WASM_SOURCE_DIR) + "/gau_api.h", headerError)) {
+        logLines.push_back("gau_api.h: " + headerError);
+    }
+
+    const std::string sourcePath = std::string(WASM_SOURCE_DIR) + "/" + action.name + ".cpp";
+    {
+        std::ofstream file(sourcePath, std::ios::binary);
+        if (!file.is_open()) {
+            functionEditor.SetStatus("Cannot write " + sourcePath);
+            return;
+        }
+        file << action.source;
+    }
+
+    // Sources build as freestanding C++ (no exceptions/RTTI); exported
+    // entry points must be extern "C" so their names stay unmangled.
+    const std::string wasmPath = std::string(WASM_MODULE_DIR) + "/" + action.name + ".wasm";
+    const std::string clang = FindClangForWasm(settings);
+    const std::string command = "\"" + clang + "\" --target=wasm32 -nostdlib -O2"
+                              + " -std=c++17 -fno-exceptions -fno-rtti"
+                              + " -Wl,--no-entry -Wl,--export-all -Wl,--allow-undefined"
+                              + " -o \"" + wasmPath + "\" \"" + sourcePath + "\"";
+
+    logLines.push_back("--- wasm build: " + action.name + " ---");
+    std::string output;
+    int exitCode = -1;
+    if (!RunCommandCaptured(command, output, exitCode)) {
+        functionEditor.SetStatus("Failed to launch clang: " + clang);
+        logLines.push_back("failed to launch: " + command);
+        return;
+    }
+
+    std::string line;
+    for (char c : output) {
+        if (c == '\n') {
+            if (!line.empty()) {
+                logLines.push_back(line);
+                std::printf("[wasm] %s\n", line.c_str());
+            }
+            line.clear();
+        } else if (c != '\r') {
+            line += c;
+        }
+    }
+    if (!line.empty()) {
+        logLines.push_back(line);
+    }
+
+    if (exitCode != 0) {
+        if (output.find("wasm32") != std::string::npos
+            && output.find("No available targets") != std::string::npos) {
+            logLines.push_back("hint: install the official LLVM (llvm.org) and set"
+                               " tools.clangPath in editor_settings.json");
+        }
+        functionEditor.SetStatus("Build failed (see Output panel)");
+        return;
+    }
+
+    LoadWasmModules();
+
+    std::vector<PinDef> directivePins;
+    std::string directiveCategory;
+    if (ParseWasmNodeDirectives(action.source, directivePins, directiveCategory)) {
+        RegisterWasmNodeClass(action.name, directiveCategory, std::move(directivePins),
+                              documents, logLines);
+    } else {
+        logLines.push_back("wasm build ok: no @in/@out directives; bind manually with"
+                           " \"execFn\": \"wasm:" + action.name + "\"");
+    }
+    functionEditor.Close();
 }
 
 // Runs the active graph; log output fans out to the console, the log
@@ -1207,6 +1489,15 @@ int main(int argc, char** argv)
     MoveConsoleToLeftMonitorMaximized();
 
     LoadCustomNodeClasses();
+    LoadWasmModules();
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(WASM_SOURCE_DIR, ec);
+        std::string headerError;
+        if (!WriteWasmApiHeader(std::string(WASM_SOURCE_DIR) + "/gau_api.h", headerError)) {
+            std::printf("gau_api.h: %s\n", headerError.c_str());
+        }
+    }
 
     EditorSettings settings;
     settings.LoadFromFile(EDITOR_SETTINGS_PATH);
@@ -1229,6 +1520,8 @@ int main(int argc, char** argv)
     NodeLayoutCache layoutCache;
     ContextMenu contextMenu;
     ClassEditorDialog classDialog;
+    FunctionEditorDialog functionEditor;
+    functionEditor.SetCharWidth(MeasureMonoCharWidth(vg, 12.0f * UI_SCALE));
     PropertyPanel propertyPanel;
     ActionMenu actionMenu;
     NodeId actionTargetNodeId = INVALID_ID;
@@ -1260,6 +1553,32 @@ int main(int argc, char** argv)
 
         for (const EditorInputEvent& event : events) {
             Document& doc = *documents[static_cast<std::size_t>(activeDocIndex)];
+
+            if (functionEditor.IsOpen()) {
+                // Clipboard keys bridge to the OS clipboard here (the
+                // dialog itself owns only caret/selection state).
+                if (event.type == EditorInputType::KeyDown) {
+                    if (event.key == EditorKey::Copy || event.key == EditorKey::Cut) {
+                        const std::string selected = functionEditor.GetSelectedText();
+                        if (!selected.empty()) {
+                            SetClipboardText(selected);
+                            if (event.key == EditorKey::Cut) {
+                                functionEditor.DeleteSelectedText();
+                            }
+                        }
+                        continue;
+                    }
+                    if (event.key == EditorKey::Paste) {
+                        functionEditor.InsertAtCaret(GetClipboardText());
+                        continue;
+                    }
+                }
+                const FunctionEditorAction action = functionEditor.HandleEvent(event);
+                if (action.type == FunctionEditorAction::Type::Build) {
+                    BuildWasmFunction(action, settings, functionEditor, documents, logLines);
+                }
+                continue;
+            }
 
             if (classDialog.IsOpen()) {
                 const ClassEditorAction action = classDialog.HandleEvent(event);
@@ -1303,6 +1622,8 @@ int main(int argc, char** argv)
                     PasteClipboardAt(clipboard, contextMenu.GetSpawnCanvasX(),
                                      contextMenu.GetSpawnCanvasY(), doc.graph, doc.undoStack,
                                      controller.selectedNodes);
+                } else if (action.type == ContextMenuAction::Type::OpenFunctionEditor) {
+                    functionEditor.Open(screenWidth, screenHeight);
                 } else {
                     ProcessMenuAction(action, contextMenu, doc.graph, doc.undoStack,
                                       classDialog, screenWidth, screenHeight,
@@ -1527,6 +1848,7 @@ int main(int argc, char** argv)
         DrawContextMenu(vg, contextMenu);
         DrawActionMenu(vg, actionMenu);
         DrawClassEditorDialog(vg, classDialog, screenWidth, screenHeight);
+        DrawFunctionEditorDialog(vg, functionEditor, screenWidth, screenHeight);
         nvgEndFrame(vg);
 
         window.EndFrame();

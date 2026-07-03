@@ -73,6 +73,13 @@ bool EditorSettings::LoadFromFile(const std::string& path)
         }
     }
 
+    if (root.contains("tools") && root["tools"].is_object()) {
+        const json& tools = root["tools"];
+        if (tools.contains("clangPath") && tools["clangPath"].is_string()) {
+            clangPath = tools["clangPath"].get<std::string>();
+        }
+    }
+
     if (root.contains("window") && root["window"].is_object()) {
         const json& windowJson = root["window"];
         if (windowJson.contains("width") && windowJson["width"].is_number_integer()
@@ -116,6 +123,7 @@ bool EditorSettings::SaveToFile(const std::string& path) const
     root["window"]["width"] = windowWidth;
     root["window"]["height"] = windowHeight;
     root["window"]["maximized"] = windowMaximized;
+    root["tools"]["clangPath"] = clangPath;
 
     std::ofstream file(path);
     if (!file.is_open()) {

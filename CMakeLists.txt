@@ -18,6 +18,14 @@ if(MSVC)
     target_compile_definitions(nanovg PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+# --- wasm3 (static) ---
+file(GLOB WASM3_SOURCES external/wasm3/source/*.c)
+add_library(wasm3 STATIC ${WASM3_SOURCES})
+target_include_directories(wasm3 PUBLIC external/wasm3/source)
+if(MSVC)
+    target_compile_definitions(wasm3 PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- editor executable ---
 add_executable(gau
     src/main.cpp
@@ -27,6 +35,8 @@ add_executable(gau
     src/platform/PlatformNVG.cpp
     src/platform/PlatformFileDialog.cpp
     src/platform/PlatformConsole.cpp
+    src/platform/PlatformProcess.cpp
+    src/platform/PlatformClipboard.cpp
     src/render/Canvas.cpp
     src/render/GridRenderer.cpp
     src/render/SelectionRenderer.cpp
@@ -35,6 +45,7 @@ add_executable(gau
     src/render/PropertyPanelRenderer.cpp
     src/render/ActionMenuRenderer.cpp
     src/render/LogPanelRenderer.cpp
+    src/render/FunctionEditorRenderer.cpp
     src/render/NodeRenderer.cpp
     src/render/LinkRenderer.cpp
     src/render/ContextMenuRenderer.cpp
@@ -52,8 +63,11 @@ add_executable(gau
     src/model/PropertyText.cpp
     src/exec/ExecEngine.cpp
     src/exec/BuiltinNodes.cpp
+    src/exec/WasmRuntime.cpp
+    src/exec/WasmApiHeader.cpp
     src/interaction/ActionMenu.cpp
     src/interaction/ContextMenu.cpp
+    src/interaction/FunctionEditorDialog.cpp
     src/interaction/LogPanel.cpp
     src/interaction/PropertyPanel.cpp
     src/interaction/TabBar.cpp
@@ -61,7 +75,7 @@ add_executable(gau
     src/interaction/HitTest.cpp
 )
 target_include_directories(gau PRIVATE src external)
-target_link_libraries(gau PRIVATE SDL3::SDL3-static nanovg)
+target_link_libraries(gau PRIVATE SDL3::SDL3-static nanovg wasm3)
 if(MSVC)
     target_compile_definitions(gau PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -105,8 +119,10 @@ add_executable(exec_tests
     src/model/BuiltinNodeClasses.cpp
     src/exec/ExecEngine.cpp
     src/exec/BuiltinNodes.cpp
+    src/exec/WasmRuntime.cpp
 )
 target_include_directories(exec_tests PRIVATE src)
+target_link_libraries(exec_tests PRIVATE wasm3)
 if(MSVC)
     target_compile_definitions(exec_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()

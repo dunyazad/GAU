@@ -42,7 +42,8 @@ void NodeClass::AdoptDynamic(std::unique_ptr<NodeClass> nodeClass)
 
 bool NodeClass::UpdateDynamic(const NodeClass* target, std::string newName,
                               std::string newCategory, std::vector<PinDef> newPins,
-                              std::vector<PropertyDef> newProperties)
+                              std::vector<PropertyDef> newProperties,
+                              std::string newExecFnName)
 {
     for (std::unique_ptr<NodeClass>& stored : MutableDynamicStorage()) {
         if (stored.get() == target) {
@@ -50,6 +51,7 @@ bool NodeClass::UpdateDynamic(const NodeClass* target, std::string newName,
             stored->category = std::move(newCategory);
             stored->pins = std::move(newPins);
             stored->properties = std::move(newProperties);
+            stored->execFnName = std::move(newExecFnName);
             return true;
         }
     }

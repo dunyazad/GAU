@@ -50,12 +50,40 @@ static void LoadDefaultFonts(NVGcontext* vg)
         return;
     }
 
+    bool boldLoaded = false;
     for (const char* path : boldCandidates) {
         if (nvgCreateFont(vg, "sans-bold", path) >= 0) {
+            boldLoaded = true;
+            break;
+        }
+    }
+    if (!boldLoaded) {
+        nvgCreateFont(vg, "sans-bold", loadedRegularPath);
+    }
+
+    // Monospace face for the code editor; falls back to the regular
+    // face (caret math then only approximates).
+#if defined(_WIN32)
+    const char* monoCandidates[] = {
+        "C:/Windows/Fonts/consola.ttf",
+        "C:/Windows/Fonts/cour.ttf",
+    };
+#elif defined(__APPLE__)
+    const char* monoCandidates[] = {
+        "/System/Library/Fonts/Menlo.ttc",
+        "/System/Library/Fonts/Monaco.ttf",
+    };
+#else
+    const char* monoCandidates[] = {
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    };
+#endif
+    for (const char* path : monoCandidates) {
+        if (nvgCreateFont(vg, "mono", path) >= 0) {
             return;
         }
     }
-    nvgCreateFont(vg, "sans-bold", loadedRegularPath);
+    nvgCreateFont(vg, "mono", loadedRegularPath);
 }
 
 NVGcontext* CreatePlatformNVGContext()

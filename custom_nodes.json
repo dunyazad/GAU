@@ -99,6 +99,22 @@
       ]
     },
     {
+      "category": "Pure",
+      "execFn": "wasm:AddVector3f",
+      "name": "AddVector3f",
+      "pins": [
+        {"direction": "in", "name": "ax", "type": "float"},
+        {"direction": "in", "name": "ay", "type": "float"},
+        {"direction": "in", "name": "az", "type": "float"},
+        {"direction": "in", "name": "bx", "type": "float"},
+        {"direction": "in", "name": "by", "type": "float"},
+        {"direction": "in", "name": "bz", "type": "float"},
+        {"direction": "out", "name": "x", "type": "float"},
+        {"direction": "out", "name": "y", "type": "float"},
+        {"direction": "out", "name": "z", "type": "float"}
+      ]
+    },
+    {
       "category": "Function",
       "execFn": "MakeString",
       "name": "MakeString",

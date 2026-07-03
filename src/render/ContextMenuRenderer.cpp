@@ -144,7 +144,8 @@ static void DrawMenuItems(NVGcontext* vg, const ContextMenu& menu, float x, floa
 
         if (row.kind == ContextMenuRowKind::Paste
             || row.kind == ContextMenuRowKind::AddComment
-            || row.kind == ContextMenuRowKind::CreateNewClass) {
+            || row.kind == ContextMenuRowKind::CreateNewClass
+            || row.kind == ContextMenuRowKind::NewWasmFunction) {
             // Separator above the first special row.
             const bool firstSpecial =
                 (i == 0)
@@ -164,6 +165,8 @@ static void DrawMenuItems(NVGcontext* vg, const ContextMenu& menu, float x, floa
                 label = "Paste";
             } else if (row.kind == ContextMenuRowKind::AddComment) {
                 label = "+ Add Comment";
+            } else if (row.kind == ContextMenuRowKind::NewWasmFunction) {
+                label = "+ New Wasm Function...";
             }
             nvgFillColor(vg, nvgRGB(140, 180, 240));
             nvgText(vg, x + 8.0f * UI_SCALE, centerY, label, nullptr);

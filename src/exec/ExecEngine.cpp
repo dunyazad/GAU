@@ -1,5 +1,6 @@
 #include "ExecEngine.h"
 #include "BuiltinNodes.h"
+#include "WasmRuntime.h"
 
 ExecContext::ExecContext(ExecEngine& engine, const Node& node, int depth)
     : engine(engine)
@@ -107,9 +108,20 @@ bool ExecEngine::ExecuteNode(const Node& node)
 void ExecEngine::RunNodeFunction(const Node& node, int depth)
 {
     const std::string& execFnName = node.nodeClass->GetExecFnName();
-    const NodeExecFn fn = FindNodeExecFn(execFnName.empty() ? node.nodeClass->GetName()
-                                                            : execFnName.c_str());
+    const std::string fnName = execFnName.empty() ? node.nodeClass->GetName() : execFnName;
     ExecContext context(*this, node, depth);
+
+    // "wasm:<export>" dispatches into the wasm runtime.
+    if (fnName.rfind("wasm:", 0) == 0) {
+        std::string error;
+        if (!WasmRuntime::Instance().CallNodeFunction(fnName.substr(5), context, error)) {
+            aborted = true;
+            Log("error: " + error);
+        }
+        return;
+    }
+
+    const NodeExecFn fn = FindNodeExecFn(fnName.c_str());
     if (fn != nullptr) {
         fn(context);
     } else {

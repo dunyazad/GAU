@@ -91,7 +91,8 @@ public:
     // NodeGraph::RebuildNodesOfClass afterwards.
     static bool UpdateDynamic(const NodeClass* target, std::string newName,
                               std::string newCategory, std::vector<PinDef> newPins,
-                              std::vector<PropertyDef> newProperties);
+                              std::vector<PropertyDef> newProperties,
+                              std::string newExecFnName);
 
 private:
     static std::vector<const NodeClass*>& MutableRegistry();

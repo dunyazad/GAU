@@ -1,8 +1,11 @@
 #include "exec/ExecEngine.h"
+#include "exec/WasmRuntime.h"
 #include "model/NodeClass.h"
 #include "model/NodeGraph.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -96,10 +99,93 @@ static void TestForLoopAndBranch()
     Check(log.size() == 4, "loop body 3x + completed 1x");
 }
 
+// Hand-assembled wasm module exporting "run":
+//   gau_output_i32(0, gau_input_i32(0) + gau_input_i32(1))
+static const unsigned char ADDER_WASM[] = {
+    0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00,
+    // types: (i32)->i32, (i32,i32)->(), ()->()
+    0x01, 0x0E, 0x03, 0x60, 0x01, 0x7F, 0x01, 0x7F,
+    0x60, 0x02, 0x7F, 0x7F, 0x00, 0x60, 0x00, 0x00,
+    // imports: env.gau_input_i32, env.gau_output_i32
+    0x02, 0x2A, 0x02,
+    0x03, 0x65, 0x6E, 0x76, 0x0D, 0x67, 0x61, 0x75, 0x5F, 0x69, 0x6E,
+    0x70, 0x75, 0x74, 0x5F, 0x69, 0x33, 0x32, 0x00, 0x00,
+    0x03, 0x65, 0x6E, 0x76, 0x0E, 0x67, 0x61, 0x75, 0x5F, 0x6F, 0x75,
+    0x74, 0x70, 0x75, 0x74, 0x5F, 0x69, 0x33, 0x32, 0x00, 0x01,
+    // function: type 2
+    0x03, 0x02, 0x01, 0x02,
+    // export "run" = func 2
+    0x07, 0x07, 0x01, 0x03, 0x72, 0x75, 0x6E, 0x00, 0x02,
+    // code
+    0x0A, 0x11, 0x01, 0x0F, 0x00,
+    0x41, 0x00,             // i32.const 0 (output index)
+    0x41, 0x00, 0x10, 0x00, // input(0)
+    0x41, 0x01, 0x10, 0x00, // input(1)
+    0x6A,                   // i32.add
+    0x10, 0x01,             // output(...)
+    0x0B,
+};
+
+static const NodeClass TestWasmAddClass("Test WasmAdd", "Pure", {
+    {PinDirection::Input, PinType::Int, "A"},
+    {PinDirection::Input, PinType::Int, "B"},
+    {PinDirection::Output, PinType::Int, "Result"},
+}, {}, "wasm:run");
+
+static void TestWasmFunction()
+{
+    const char* dir = "exec_test_wasm";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    {
+        std::ofstream file(std::string(dir) + "/adder.wasm", std::ios::binary);
+        file.write(reinterpret_cast<const char*>(ADDER_WASM), sizeof(ADDER_WASM));
+    }
+
+    std::vector<std::string> wasmErrors;
+    const int loaded = WasmRuntime::Instance().LoadModulesFromDirectory(dir, wasmErrors);
+    for (const std::string& error : wasmErrors) {
+        std::printf("  wasm error: %s\n", error.c_str());
+    }
+    Check(loaded == 1, "wasm module loaded");
+    Check(WasmRuntime::Instance().HasFunction("run"), "wasm export found");
+
+    NodeGraph graph;
+    const NodeId beginId = graph.AddNode(*NodeClass::FindByName("Event Begin"), 0, 0);
+    const NodeId printId = graph.AddNode(*NodeClass::FindByName("Print String"), 0, 0);
+    const NodeId intA = graph.AddNode(*NodeClass::FindByName("Make Int"), 0, 0);
+    const NodeId intB = graph.AddNode(*NodeClass::FindByName("Make Int"), 0, 0);
+    const NodeId wasmId = graph.AddNode(TestWasmAddClass, 0, 0);
+    const NodeId formatId = graph.AddNode(TestMakeStringClass, 0, 0);
+
+    graph.FindNode(intA)->propertyValues[0].scalar = Value(4);
+    graph.FindNode(intB)->propertyValues[0].scalar = Value(6);
+
+    const Node* begin = graph.FindNode(beginId);
+    const Node* print = graph.FindNode(printId);
+    const Node* a = graph.FindNode(intA);
+    const Node* b = graph.FindNode(intB);
+    const Node* wasmNode = graph.FindNode(wasmId);
+    const Node* format = graph.FindNode(formatId);
+
+    graph.AddLink(begin->outputs[0].id, print->inputs[0].id);
+    graph.AddLink(a->outputs[0].id, wasmNode->inputs[0].id);
+    graph.AddLink(b->outputs[0].id, wasmNode->inputs[1].id);
+    graph.AddLink(wasmNode->outputs[0].id, format->inputs[0].id);
+    graph.AddLink(format->outputs[0].id, print->inputs[1].id);
+
+    std::vector<std::string> log;
+    ExecEngine engine(graph, [&log](const std::string& message) { log.push_back(message); });
+
+    Check(engine.Run(), "wasm run succeeds");
+    Check(log.size() == 1 && log[0] == "value=10", "wasm add result printed");
+}
+
 int main()
 {
     TestPrintChain();
     TestForLoopAndBranch();
+    TestWasmFunction();
 
     if (failCount == 0) {
         std::printf("ExecTests: all tests passed\n");
