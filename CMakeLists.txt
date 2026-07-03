@@ -26,6 +26,7 @@ add_executable(gau
     src/platform/PlatformInput.cpp
     src/platform/PlatformNVG.cpp
     src/platform/PlatformFileDialog.cpp
+    src/platform/PlatformConsole.cpp
     src/render/Canvas.cpp
     src/render/GridRenderer.cpp
     src/render/SelectionRenderer.cpp

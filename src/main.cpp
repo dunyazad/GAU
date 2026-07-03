@@ -1,5 +1,6 @@
 #include "platform/PlatformWindow.h"
 #include "platform/PlatformNVG.h"
+#include "platform/PlatformConsole.h"
 #include "platform/PlatformFileDialog.h"
 #include "render/Canvas.h"
 #include "render/GridRenderer.h"
@@ -1202,6 +1203,8 @@ int main(int argc, char** argv)
 {
     (void)argc;
     (void)argv;
+
+    MoveConsoleToLeftMonitorMaximized();
 
     LoadCustomNodeClasses();
 
