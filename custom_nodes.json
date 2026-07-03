@@ -100,15 +100,32 @@
     },
     {
       "category": "Function",
-      "name": "ToString",
+      "name": "MakeString",
       "pins": [
         {
           "direction": "in",
-          "name": "",
-          "type": "exec"
+          "name": "arg0",
+          "type": "float"
+        },
+        {
+          "direction": "in",
+          "name": "arg1",
+          "type": "float"
+        },
+        {
+          "direction": "in",
+          "name": "arg2",
+          "type": "float"
         }
       ],
-      "properties": []
+      "properties": [
+        {
+          "container": "none",
+          "default": "",
+          "name": "data",
+          "type": "string"
+        }
+      ]
     }
   ]
 }

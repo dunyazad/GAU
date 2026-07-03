@@ -76,6 +76,7 @@ bool TranslateSDLEvent(const SDL_Event& sdlEvent, EditorInputEvent& outEvent)
         outEvent.y = sdlEvent.button.y;
         outEvent.alt = (SDL_GetModState() & SDL_KMOD_ALT) != 0;
         outEvent.ctrl = (SDL_GetModState() & SDL_KMOD_CTRL) != 0;
+        outEvent.clicks = sdlEvent.button.clicks;
         outEvent.wheelDelta = 0.0f;
         return true;
     }

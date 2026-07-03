@@ -1392,6 +1392,26 @@ int main(int argc, char** argv)
                 }
             }
 
+            // Double-clicking a node opens its class in the editor.
+            if (event.type == EditorInputType::MouseDown
+                && event.button == EditorMouseButton::Left
+                && event.clicks >= 2 && !event.alt && !event.ctrl) {
+                const Vec2 canvasPos = doc.canvas.ScreenToCanvas(Vec2{event.x, event.y});
+                const NodeId hitNodeId = HitTestNode(layoutCache, canvasPos.x, canvasPos.y);
+                if (hitNodeId != INVALID_ID) {
+                    const Node* node = doc.graph.FindNode(hitNodeId);
+                    if (node != nullptr) {
+                        if (node->nodeClass->IsDynamic()) {
+                            classDialog.OpenForEdit(*node->nodeClass, screenWidth, screenHeight);
+                        } else {
+                            std::printf("builtin class cannot be edited: %s\n",
+                                        node->nodeClass->GetName());
+                        }
+                    }
+                    continue;
+                }
+            }
+
             if (controller.HandleEvent(event, doc.canvas, doc.graph, layoutCache, doc.undoStack)) {
                 // Right click: action menu on a node/comment, creation
                 // menu on empty canvas.

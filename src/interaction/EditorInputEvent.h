@@ -51,6 +51,9 @@ struct EditorInputEvent
     bool alt = false;
     bool ctrl = false;
 
+    // Consecutive click count for MouseDown (2 = double click).
+    int clicks = 1;
+
     // Vertical wheel movement in notches; positive means zoom in.
     float wheelDelta = 0.0f;
 
