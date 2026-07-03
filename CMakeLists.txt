@@ -44,6 +44,7 @@ add_executable(gau
     src/model/EditorSettings.cpp
     src/model/UndoStack.cpp
     src/model/GraphCommands.cpp
+    src/model/GraphClipboard.cpp
     src/model/GraphSerializer.cpp
     src/model/PropertyText.cpp
     src/interaction/ActionMenu.cpp

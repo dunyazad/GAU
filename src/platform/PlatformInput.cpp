@@ -28,6 +28,10 @@ static EditorKey TranslateKey(SDL_Keycode keycode, SDL_Keymod mod)
         return EditorKey::None;
     case SDLK_Y:
         return ctrl ? EditorKey::Redo : EditorKey::None;
+    case SDLK_C:
+        return ctrl ? EditorKey::Copy : EditorKey::None;
+    case SDLK_V:
+        return ctrl ? EditorKey::Paste : EditorKey::None;
     default:
         return EditorKey::None;
     }

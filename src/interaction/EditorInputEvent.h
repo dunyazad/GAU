@@ -32,6 +32,8 @@ enum class EditorKey
     Tab,
     Undo,
     Redo,
+    Copy,
+    Paste,
 };
 
 struct EditorInputEvent

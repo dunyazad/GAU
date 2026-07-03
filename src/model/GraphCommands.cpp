@@ -184,6 +184,98 @@ void DeleteNodesCommand::Undo(NodeGraph& graph)
     }
 }
 
+PasteClipboardCommand::PasteClipboardCommand(GraphClipboard clipboard, float x, float y)
+    : clipboard(std::move(clipboard))
+    , x(x)
+    , y(y)
+{
+}
+
+bool PasteClipboardCommand::Execute(NodeGraph& graph)
+{
+    createdNodeIds.clear();
+
+    for (const ClipboardNode& clipNode : clipboard.nodes) {
+        if (clipNode.nodeClass == nullptr) {
+            createdNodeIds.push_back(INVALID_ID);
+            continue;
+        }
+        const NodeId nodeId = graph.AddNode(*clipNode.nodeClass,
+                                            x + clipNode.relX, y + clipNode.relY);
+        Node* node = graph.FindNode(nodeId);
+        if (node != nullptr) {
+            // The class may have changed since the copy; keep in range.
+            const std::size_t count =
+                (clipNode.propertyValues.size() < node->propertyValues.size())
+                    ? clipNode.propertyValues.size()
+                    : node->propertyValues.size();
+            for (std::size_t i = 0; i < count; ++i) {
+                node->propertyValues[i] = clipNode.propertyValues[i];
+            }
+        }
+        createdNodeIds.push_back(nodeId);
+    }
+
+    bool anyCreated = false;
+    for (NodeId nodeId : createdNodeIds) {
+        if (nodeId != INVALID_ID) {
+            anyCreated = true;
+            break;
+        }
+    }
+    if (!anyCreated) {
+        return false;
+    }
+
+    for (const ClipboardLink& clipLink : clipboard.links) {
+        if (clipLink.fromNodeIndex < 0
+            || clipLink.fromNodeIndex >= static_cast<int>(createdNodeIds.size())
+            || clipLink.toNodeIndex < 0
+            || clipLink.toNodeIndex >= static_cast<int>(createdNodeIds.size())) {
+            continue;
+        }
+        const Node* fromNode =
+            graph.FindNode(createdNodeIds[static_cast<std::size_t>(clipLink.fromNodeIndex)]);
+        const Node* toNode =
+            graph.FindNode(createdNodeIds[static_cast<std::size_t>(clipLink.toNodeIndex)]);
+        if (fromNode == nullptr || toNode == nullptr
+            || clipLink.fromPinIndex < 0
+            || clipLink.fromPinIndex >= static_cast<int>(fromNode->outputs.size())
+            || clipLink.toPinIndex < 0
+            || clipLink.toPinIndex >= static_cast<int>(toNode->inputs.size())) {
+            continue;
+        }
+        const PinId outputPin =
+            fromNode->outputs[static_cast<std::size_t>(clipLink.fromPinIndex)].id;
+        const PinId inputPin =
+            toNode->inputs[static_cast<std::size_t>(clipLink.toPinIndex)].id;
+        if (!graph.CanConnect(outputPin, inputPin)) {
+            continue;
+        }
+        const LinkId linkId = graph.AddLink(outputPin, inputPin);
+        Link* link = graph.FindLink(linkId);
+        if (link != nullptr) {
+            for (const LinkPoint& relPoint : clipLink.relPoints) {
+                LinkPoint point;
+                point.x = x + relPoint.x;
+                point.y = y + relPoint.y;
+                link->points.push_back(point);
+            }
+        }
+    }
+    return true;
+}
+
+void PasteClipboardCommand::Undo(NodeGraph& graph)
+{
+    for (NodeId nodeId : createdNodeIds) {
+        if (nodeId != INVALID_ID) {
+            graph.RemoveNode(nodeId);
+        }
+    }
+    createdNodeIds.clear();
+}
+
 DeleteCommentCommand::DeleteCommentCommand(CommentId commentId)
     : commentId(commentId)
 {

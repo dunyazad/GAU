@@ -11,6 +11,7 @@
 #include "render/NodeLayoutCache.h"
 #include "render/ContextMenuRenderer.h"
 #include "model/NodeGraph.h"
+#include "model/GraphClipboard.h"
 #include "model/NodeClassLoader.h"
 #include "model/EditorSettings.h"
 #include "model/GraphSerializer.h"
@@ -921,6 +922,26 @@ static void CommitTabRename(TabRenameState& rename,
     std::printf("renamed: %s\n", doc.filePath.c_str());
 }
 
+// Pastes the clipboard at a canvas position and selects the new nodes.
+static void PasteClipboardAt(const GraphClipboard& clipboard, float canvasX, float canvasY,
+                             NodeGraph& graph, UndoStack& undoStack,
+                             std::vector<NodeId>& outSelection)
+{
+    if (clipboard.IsEmpty()) {
+        return;
+    }
+    auto command = std::make_unique<PasteClipboardCommand>(clipboard, canvasX, canvasY);
+    const PasteClipboardCommand* rawCommand = command.get();
+    if (undoStack.Execute(std::move(command), graph)) {
+        outSelection.clear();
+        for (NodeId nodeId : rawCommand->GetCreatedNodeIds()) {
+            if (nodeId != INVALID_ID) {
+                outSelection.push_back(nodeId);
+            }
+        }
+    }
+}
+
 // Parses a property-panel edit and applies it as an undoable command.
 static void ApplyPropertyPanelAction(const PropertyPanelAction& action, const Node& node,
                                      NodeGraph& graph, UndoStack& undoStack)
@@ -1180,6 +1201,7 @@ int main(int argc, char** argv)
     ActionMenu actionMenu;
     NodeId actionTargetNodeId = INVALID_ID;
     CommentId actionTargetCommentId = INVALID_ID;
+    GraphClipboard clipboard;
     TabRenameState tabRename;
     std::vector<EditorInputEvent> events;
 
@@ -1213,19 +1235,23 @@ int main(int argc, char** argv)
 
             if (actionMenu.IsOpen()) {
                 const ActionMenuResult result = actionMenu.HandleEvent(event);
-                if (result.type == ActionMenuResult::Type::Selected && result.itemIndex == 0) {
+                if (result.type == ActionMenuResult::Type::Selected) {
                     if (actionTargetNodeId != INVALID_ID) {
-                        std::vector<NodeId> deleteIds;
+                        std::vector<NodeId> targetIds;
                         if (controller.IsSelected(actionTargetNodeId)) {
-                            deleteIds = controller.selectedNodes;
+                            targetIds = controller.selectedNodes;
                         } else {
-                            deleteIds.push_back(actionTargetNodeId);
+                            targetIds.push_back(actionTargetNodeId);
                         }
-                        doc.undoStack.Execute(
-                            std::make_unique<DeleteNodesCommand>(std::move(deleteIds)),
-                            doc.graph);
-                        controller.selectedNodes.clear();
-                    } else if (actionTargetCommentId != INVALID_ID) {
+                        if (result.itemIndex == 0) {
+                            clipboard = CopyNodesToClipboard(doc.graph, targetIds);
+                        } else if (result.itemIndex == 1) {
+                            doc.undoStack.Execute(
+                                std::make_unique<DeleteNodesCommand>(std::move(targetIds)),
+                                doc.graph);
+                            controller.selectedNodes.clear();
+                        }
+                    } else if (actionTargetCommentId != INVALID_ID && result.itemIndex == 0) {
                         if (controller.editingCommentId == actionTargetCommentId) {
                             controller.CancelTitleEdit();
                         }
@@ -1239,9 +1265,15 @@ int main(int argc, char** argv)
 
             if (contextMenu.IsOpen()) {
                 const ContextMenuAction action = contextMenu.HandleEvent(event);
-                ProcessMenuAction(action, contextMenu, doc.graph, doc.undoStack,
-                                  classDialog, screenWidth, screenHeight,
-                                  layoutCache, controller.selectedNodes);
+                if (action.type == ContextMenuAction::Type::Paste) {
+                    PasteClipboardAt(clipboard, contextMenu.GetSpawnCanvasX(),
+                                     contextMenu.GetSpawnCanvasY(), doc.graph, doc.undoStack,
+                                     controller.selectedNodes);
+                } else {
+                    ProcessMenuAction(action, contextMenu, doc.graph, doc.undoStack,
+                                      classDialog, screenWidth, screenHeight,
+                                      layoutCache, controller.selectedNodes);
+                }
                 continue;
             }
 
@@ -1331,6 +1363,7 @@ int main(int argc, char** argv)
                     const float mouseX = controller.lastMouseX;
                     const float mouseY = controller.lastMouseY;
                     const Vec2 canvasPos = doc.canvas.ScreenToCanvas(Vec2{mouseX, mouseY});
+                    contextMenu.SetPasteAvailable(!clipboard.IsEmpty());
                     contextMenu.Open(mouseX, mouseY, canvasPos.x, canvasPos.y,
                                      screenWidth, screenHeight);
                     continue;
@@ -1344,6 +1377,19 @@ int main(int argc, char** argv)
                     }
                     continue;
                 }
+                if (event.key == EditorKey::Copy) {
+                    if (!controller.selectedNodes.empty()) {
+                        clipboard = CopyNodesToClipboard(doc.graph, controller.selectedNodes);
+                    }
+                    continue;
+                }
+                if (event.key == EditorKey::Paste) {
+                    const Vec2 canvasPos = doc.canvas.ScreenToCanvas(
+                        Vec2{controller.lastMouseX, controller.lastMouseY});
+                    PasteClipboardAt(clipboard, canvasPos.x, canvasPos.y,
+                                     doc.graph, doc.undoStack, controller.selectedNodes);
+                    continue;
+                }
             }
 
             if (controller.HandleEvent(event, doc.canvas, doc.graph, layoutCache, doc.undoStack)) {
@@ -1354,7 +1400,7 @@ int main(int argc, char** argv)
                 if (hitNodeId != INVALID_ID) {
                     actionTargetNodeId = hitNodeId;
                     actionTargetCommentId = INVALID_ID;
-                    actionMenu.Open(event.x, event.y, {"Delete"},
+                    actionMenu.Open(event.x, event.y, {"Copy", "Delete"},
                                     screenWidth, screenHeight);
                     continue;
                 }
@@ -1367,6 +1413,7 @@ int main(int argc, char** argv)
                                     screenWidth, screenHeight);
                     continue;
                 }
+                contextMenu.SetPasteAvailable(!clipboard.IsEmpty());
                 contextMenu.Open(event.x, event.y, canvasPos.x, canvasPos.y,
                                  screenWidth, screenHeight);
             }

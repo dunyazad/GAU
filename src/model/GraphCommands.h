@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GraphClipboard.h"
 #include "GraphTypes.h"
 #include "NodeClass.h"
 #include "NodeGraph.h"
@@ -105,6 +106,25 @@ private:
     std::vector<NodeId> nodeIds;
     std::vector<Node> savedNodes;
     std::vector<Link> savedLinks;
+};
+
+// Instantiates the clipboard contents at a canvas position as one
+// undoable step; the caller may select GetCreatedNodeIds afterwards.
+class PasteClipboardCommand : public GraphCommand
+{
+public:
+    PasteClipboardCommand(GraphClipboard clipboard, float x, float y);
+
+    bool Execute(NodeGraph& graph) override;
+    void Undo(NodeGraph& graph) override;
+
+    const std::vector<NodeId>& GetCreatedNodeIds() const { return createdNodeIds; }
+
+private:
+    GraphClipboard clipboard;
+    float x;
+    float y;
+    std::vector<NodeId> createdNodeIds;
 };
 
 // Deletes a comment box.

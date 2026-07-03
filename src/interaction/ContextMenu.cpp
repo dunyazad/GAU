@@ -139,6 +139,10 @@ ContextMenuAction ContextMenu::HandleEvent(const EditorInputEvent& event)
                         Close();
                     }
                     break;
+                case ContextMenuRowKind::Paste:
+                    action.type = ContextMenuAction::Type::Paste;
+                    Close();
+                    break;
                 case ContextMenuRowKind::AddComment:
                     action.type = ContextMenuAction::Type::AddComment;
                     Close();
@@ -244,6 +248,12 @@ void ContextMenu::UpdateFilter()
             item.nodeClass = nodeClass;
             rows.push_back(item);
         }
+    }
+
+    if (pasteAvailable) {
+        ContextMenuRow pasteRow;
+        pasteRow.kind = ContextMenuRowKind::Paste;
+        rows.push_back(pasteRow);
     }
 
     ContextMenuRow addCommentRow;

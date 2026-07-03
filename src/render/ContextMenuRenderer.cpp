@@ -142,9 +142,15 @@ static void DrawMenuItems(NVGcontext* vg, const ContextMenu& menu, float x, floa
             nvgFill(vg);
         }
 
-        if (row.kind == ContextMenuRowKind::AddComment
+        if (row.kind == ContextMenuRowKind::Paste
+            || row.kind == ContextMenuRowKind::AddComment
             || row.kind == ContextMenuRowKind::CreateNewClass) {
-            if (row.kind == ContextMenuRowKind::AddComment) {
+            // Separator above the first special row.
+            const bool firstSpecial =
+                (i == 0)
+                || (rows[static_cast<std::size_t>(i - 1)].kind == ContextMenuRowKind::CategoryHeader
+                    || rows[static_cast<std::size_t>(i - 1)].kind == ContextMenuRowKind::NodeItem);
+            if (firstSpecial) {
                 nvgBeginPath(vg);
                 nvgMoveTo(vg, x + 4.0f * UI_SCALE, rowY + 0.5f);
                 nvgLineTo(vg, x + width - 4.0f * UI_SCALE, rowY + 0.5f);
@@ -153,11 +159,14 @@ static void DrawMenuItems(NVGcontext* vg, const ContextMenu& menu, float x, floa
                 nvgStroke(vg);
             }
 
+            const char* label = "+ Create New Class...";
+            if (row.kind == ContextMenuRowKind::Paste) {
+                label = "Paste";
+            } else if (row.kind == ContextMenuRowKind::AddComment) {
+                label = "+ Add Comment";
+            }
             nvgFillColor(vg, nvgRGB(140, 180, 240));
-            nvgText(vg, x + 8.0f * UI_SCALE, centerY,
-                    row.kind == ContextMenuRowKind::AddComment ? "+ Add Comment"
-                                                               : "+ Create New Class...",
-                    nullptr);
+            nvgText(vg, x + 8.0f * UI_SCALE, centerY, label, nullptr);
             continue;
         }
 

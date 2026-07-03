@@ -27,6 +27,9 @@ struct ContextMenuAction
         // (around the selection if any, else default-sized at the spawn
         // position).
         AddComment,
+        // "Paste" was chosen; the caller pastes the clipboard at the
+        // spawn position.
+        Paste,
     };
 
     Type type = Type::None;
@@ -38,6 +41,7 @@ enum class ContextMenuRowKind
 {
     CategoryHeader,
     NodeItem,
+    Paste,
     AddComment,
     CreateNewClass,
 };
@@ -90,6 +94,9 @@ public:
     // are never hovered.
     int GetHoveredIndex() const { return hoveredIndex; }
     bool IsCategoryCollapsed(const std::string& category) const;
+    // Shows/hides the "Paste" row; set before Open when the clipboard
+    // state changes.
+    void SetPasteAvailable(bool available) { pasteAvailable = available; }
     // Applies/collects persisted collapse state (EditorSettings).
     void SetCollapsedCategories(std::vector<std::string> categories);
     const std::vector<std::string>& GetCollapsedCategories() const { return collapsedCategories; }
@@ -128,4 +135,5 @@ private:
     int hoveredIndex = -1;
     // Names of collapsed categories; persists across menu opens.
     std::vector<std::string> collapsedCategories;
+    bool pasteAvailable = false;
 };
