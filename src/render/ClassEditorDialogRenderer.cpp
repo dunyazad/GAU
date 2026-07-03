@@ -8,22 +8,8 @@
 
 static const char* FONT_REGULAR = "sans";
 static const char* FONT_BOLD = "sans-bold";
-static const float DIALOG_FONT_SIZE = 13.0f;
-
-static const char* CategoryDisplayName(NodeCategory category)
-{
-    switch (category) {
-    case NodeCategory::Event:
-        return "Event";
-    case NodeCategory::Function:
-        return "Function";
-    case NodeCategory::FlowControl:
-        return "Flow Control";
-    case NodeCategory::Pure:
-        return "Pure";
-    }
-    return "";
-}
+static const float DIALOG_FONT_SIZE = 13.0f * UI_SCALE;
+static const float DIALOG_TITLE_FONT_SIZE = 15.0f * UI_SCALE;
 
 static const char* PinTypeDisplayName(PinType type)
 {
@@ -44,10 +30,43 @@ static const char* PinTypeDisplayName(PinType type)
     return "";
 }
 
+static const char* ContainerDisplayName(PropertyContainer container)
+{
+    switch (container) {
+    case PropertyContainer::None:
+        return "None";
+    case PropertyContainer::Array:
+        return "Array";
+    case PropertyContainer::Set:
+        return "Set";
+    case PropertyContainer::Map:
+        return "Map";
+    }
+    return "";
+}
+
+static const char* DropdownOptionLabel(const ClassEditorDialog& dialog, int optionIndex)
+{
+    switch (dialog.GetDropdownKind()) {
+    case DialogDropdownKind::None:
+        return "";
+    case DialogDropdownKind::Category:
+        return dialog.GetCategoryOptions()[static_cast<std::size_t>(optionIndex)].c_str();
+    case DialogDropdownKind::PinType:
+        return PinTypeDisplayName(ALL_PIN_TYPES[optionIndex]);
+    case DialogDropdownKind::PropertyContainer:
+        return ContainerDisplayName(ALL_PROPERTY_CONTAINERS[optionIndex]);
+    case DialogDropdownKind::PropertyType:
+    case DialogDropdownKind::PropertyKeyType:
+        return PinTypeDisplayName(VALUE_PIN_TYPES[optionIndex]);
+    }
+    return "";
+}
+
 static void DrawButton(NVGcontext* vg, const UIRect& rect, const char* label, bool accent)
 {
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, 3.0f);
+    nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, 3.0f * UI_SCALE);
     nvgFillColor(vg, accent ? nvgRGB(50, 90, 160) : nvgRGB(45, 45, 50));
     nvgFill(vg);
     nvgStrokeColor(vg, nvgRGB(70, 70, 78));
@@ -61,11 +80,42 @@ static void DrawButton(NVGcontext* vg, const UIRect& rect, const char* label, bo
     nvgText(vg, rect.x + rect.w * 0.5f, rect.y + rect.h * 0.5f, label, nullptr);
 }
 
+// Dropdown closed state: label left-aligned plus a small down arrow.
+static void DrawDropdownButton(NVGcontext* vg, const UIRect& rect, const char* label, bool enabled)
+{
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, 3.0f * UI_SCALE);
+    nvgFillColor(vg, enabled ? nvgRGB(45, 45, 50) : nvgRGB(32, 32, 36));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGB(70, 70, 78));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    nvgSave(vg);
+    nvgIntersectScissor(vg, rect.x, rect.y, rect.w - 12.0f * UI_SCALE, rect.h);
+    nvgFontFace(vg, FONT_REGULAR);
+    nvgFontSize(vg, DIALOG_FONT_SIZE);
+    nvgFillColor(vg, enabled ? nvgRGB(230, 230, 235) : nvgRGB(110, 110, 118));
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    nvgText(vg, rect.x + 6.0f * UI_SCALE, rect.y + rect.h * 0.5f, label, nullptr);
+    nvgRestore(vg);
+
+    const float arrowCenterX = rect.x + rect.w - 8.0f * UI_SCALE;
+    const float arrowCenterY = rect.y + rect.h * 0.5f;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, arrowCenterX - 3.5f * UI_SCALE, arrowCenterY - 2.0f * UI_SCALE);
+    nvgLineTo(vg, arrowCenterX + 3.5f * UI_SCALE, arrowCenterY - 2.0f * UI_SCALE);
+    nvgLineTo(vg, arrowCenterX, arrowCenterY + 2.5f * UI_SCALE);
+    nvgClosePath(vg);
+    nvgFillColor(vg, enabled ? nvgRGB(170, 170, 178) : nvgRGB(90, 90, 96));
+    nvgFill(vg);
+}
+
 static void DrawTextField(NVGcontext* vg, const UIRect& rect, const std::string& text,
                           const char* placeholder, bool focused)
 {
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, 3.0f);
+    nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, 3.0f * UI_SCALE);
     nvgFillColor(vg, nvgRGB(15, 15, 17));
     nvgFill(vg);
     nvgStrokeColor(vg, focused ? nvgRGB(70, 110, 180) : nvgRGB(60, 60, 66));
@@ -78,7 +128,7 @@ static void DrawTextField(NVGcontext* vg, const UIRect& rect, const std::string&
 
     nvgSave(vg);
     nvgIntersectScissor(vg, rect.x, rect.y, rect.w, rect.h);
-    const float textX = rect.x + 7.0f;
+    const float textX = rect.x + 7.0f * UI_SCALE;
     const float textY = rect.y + rect.h * 0.5f;
     if (text.empty() && !focused) {
         nvgFillColor(vg, nvgRGB(110, 110, 118));
@@ -108,13 +158,85 @@ static void DrawPinRows(NVGcontext* vg, const ClassEditorDialog& dialog)
 
         DrawButton(vg, dialog.PinDirectionRect(i),
                    pin.direction == PinDirection::Input ? "In" : "Out", false);
-        DrawButton(vg, dialog.PinTypeRect(i), PinTypeDisplayName(pin.type), false);
+        DrawDropdownButton(vg, dialog.PinTypeRect(i), PinTypeDisplayName(pin.type), true);
 
         const bool focused = dialog.GetFocus() == ClassEditorDialog::Focus::PinName
                           && dialog.GetFocusedPinIndex() == i;
         DrawTextField(vg, dialog.PinNameRect(i), pin.name, "Pin name", focused);
 
         DrawButton(vg, dialog.PinRemoveRect(i), "x", false);
+    }
+}
+
+static void DrawPropertyRows(NVGcontext* vg, const ClassEditorDialog& dialog)
+{
+    const std::vector<PropertyDraft>& properties = dialog.GetProperties();
+    for (int i = 0; i < static_cast<int>(properties.size()); ++i) {
+        const PropertyDraft& property = properties[static_cast<std::size_t>(i)];
+
+        DrawDropdownButton(vg, dialog.PropertyContainerRect(i),
+                           ContainerDisplayName(property.container), true);
+        DrawDropdownButton(vg, dialog.PropertyTypeRect(i),
+                           PinTypeDisplayName(property.type), true);
+
+        const bool isMap = property.container == PropertyContainer::Map;
+        DrawDropdownButton(vg, dialog.PropertyKeyTypeRect(i),
+                           isMap ? PinTypeDisplayName(property.keyType) : "-", isMap);
+
+        const bool nameFocused = dialog.GetFocus() == ClassEditorDialog::Focus::PropertyName
+                              && dialog.GetFocusedPropertyIndex() == i;
+        DrawTextField(vg, dialog.PropertyNameRect(i), property.name, "Name", nameFocused);
+
+        const bool defaultFocused = dialog.GetFocus() == ClassEditorDialog::Focus::PropertyDefault
+                                 && dialog.GetFocusedPropertyIndex() == i;
+        const char* placeholder = "Default";
+        if (property.container == PropertyContainer::Array
+            || property.container == PropertyContainer::Set) {
+            placeholder = "a, b, c";
+        } else if (isMap) {
+            placeholder = "k:v, k:v";
+        }
+        DrawTextField(vg, dialog.PropertyDefaultRect(i), property.defaultText, placeholder,
+                      defaultFocused);
+
+        DrawButton(vg, dialog.PropertyRemoveRect(i), "x", false);
+    }
+}
+
+static void DrawOpenDropdown(NVGcontext* vg, const ClassEditorDialog& dialog)
+{
+    if (dialog.GetDropdownKind() == DialogDropdownKind::None) {
+        return;
+    }
+
+    const UIRect list = dialog.DropdownListRect();
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, list.x, list.y, list.w, list.h, 3.0f * UI_SCALE);
+    nvgFillColor(vg, nvgRGBA(18, 18, 21, 250));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGB(80, 80, 88));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    nvgFontFace(vg, FONT_REGULAR);
+    nvgFontSize(vg, DIALOG_FONT_SIZE);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+    const int selectedIndex = dialog.GetDropdownSelectedIndex();
+    for (int i = 0; i < dialog.GetDropdownOptionCount(); ++i) {
+        const UIRect option = dialog.DropdownOptionRect(i);
+
+        if (i == dialog.GetDropdownHoverIndex()) {
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, option.x + 2.0f * UI_SCALE, option.y,
+                           option.w - 4.0f * UI_SCALE, option.h, 2.0f * UI_SCALE);
+            nvgFillColor(vg, nvgRGBA(70, 110, 180, 220));
+            nvgFill(vg);
+        }
+
+        nvgFillColor(vg, (i == selectedIndex) ? nvgRGB(140, 180, 240) : nvgRGB(225, 225, 230));
+        nvgText(vg, option.x + 8.0f * UI_SCALE, option.y + option.h * 0.5f,
+                DropdownOptionLabel(dialog, i), nullptr);
     }
 }
 
@@ -138,7 +260,7 @@ void DrawClassEditorDialog(NVGcontext* vg, const ClassEditorDialog& dialog,
 
     // Panel.
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, x, y, width, height, 5.0f);
+    nvgRoundedRect(vg, x, y, width, height, 5.0f * UI_SCALE);
     nvgFillColor(vg, nvgRGBA(24, 24, 28, 250));
     nvgFill(vg);
     nvgStrokeColor(vg, nvgRGB(70, 70, 78));
@@ -147,12 +269,12 @@ void DrawClassEditorDialog(NVGcontext* vg, const ClassEditorDialog& dialog,
 
     // Title.
     nvgFontFace(vg, FONT_BOLD);
-    nvgFontSize(vg, 15.0f);
+    nvgFontSize(vg, DIALOG_TITLE_FONT_SIZE);
     nvgFillColor(vg, nvgRGB(240, 240, 245));
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     nvgText(vg, x + ClassEditorDialog::PADDING,
             y + ClassEditorDialog::PADDING + ClassEditorDialog::TITLE_HEIGHT * 0.5f,
-            "Create Node Class", nullptr);
+            dialog.IsEditMode() ? "Edit Node Class" : "Create Node Class", nullptr);
 
     // Name row.
     const UIRect nameRect = dialog.NameFieldRect();
@@ -160,18 +282,22 @@ void DrawClassEditorDialog(NVGcontext* vg, const ClassEditorDialog& dialog,
     DrawTextField(vg, nameRect, dialog.GetClassNameText(), "Class name",
                   dialog.GetFocus() == ClassEditorDialog::Focus::ClassName);
 
-    // Category row.
-    const UIRect categoryRect = dialog.CategoryButtonRect();
+    // Category row: editable text field plus a suggestion dropdown arrow.
+    const UIRect categoryRect = dialog.CategoryFieldRect();
     DrawRowLabel(vg, x + ClassEditorDialog::PADDING, categoryRect.y + categoryRect.h * 0.5f, "Category");
-    DrawButton(vg, categoryRect, CategoryDisplayName(dialog.GetCategory()), false);
+    DrawTextField(vg, categoryRect, dialog.GetCategoryText(), "Category",
+                  dialog.GetFocus() == ClassEditorDialog::Focus::Category);
+    DrawDropdownButton(vg, dialog.CategoryDropdownRect(), "", true);
 
-    // Pins label + rows.
-    const float pinsLabelY = categoryRect.y + ClassEditorDialog::ROW_HEIGHT
-                           + ClassEditorDialog::GAP + ClassEditorDialog::PINS_LABEL_HEIGHT * 0.5f;
-    DrawRowLabel(vg, x + ClassEditorDialog::PADDING, pinsLabelY, "Pins");
+    // Pins section.
+    DrawRowLabel(vg, x + ClassEditorDialog::PADDING, dialog.PinsLabelCenterY(), "Pins");
     DrawPinRows(vg, dialog);
-
     DrawButton(vg, dialog.AddPinButtonRect(), "+ Add Pin", false);
+
+    // Properties section.
+    DrawRowLabel(vg, x + ClassEditorDialog::PADDING, dialog.PropertiesLabelCenterY(), "Properties");
+    DrawPropertyRows(vg, dialog);
+    DrawButton(vg, dialog.AddPropertyButtonRect(), "+ Add Property", false);
 
     // Error line.
     const std::string& errorText = dialog.GetErrorText();
@@ -180,12 +306,13 @@ void DrawClassEditorDialog(NVGcontext* vg, const ClassEditorDialog& dialog,
         nvgFontSize(vg, DIALOG_FONT_SIZE);
         nvgFillColor(vg, nvgRGB(230, 90, 90));
         nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        nvgText(vg, x + ClassEditorDialog::PADDING,
-                dialog.AddPinButtonRect().y + ClassEditorDialog::BUTTON_HEIGHT
-                    + ClassEditorDialog::GAP + ClassEditorDialog::ERROR_HEIGHT * 0.5f,
+        nvgText(vg, x + ClassEditorDialog::PADDING, dialog.ErrorCenterY(),
                 errorText.c_str(), nullptr);
     }
 
-    DrawButton(vg, dialog.OkButtonRect(), "Create", true);
+    DrawButton(vg, dialog.OkButtonRect(), dialog.IsEditMode() ? "Save" : "Create", true);
     DrawButton(vg, dialog.CancelButtonRect(), "Cancel", false);
+
+    // Open dropdown draws on top of everything else.
+    DrawOpenDropdown(vg, dialog);
 }

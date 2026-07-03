@@ -1,21 +1,101 @@
 {
   "nodeClasses": [
     {
-      "name": "Multiply",
       "category": "Pure",
+      "name": "Multiply",
       "pins": [
-        {"direction": "in", "type": "float", "name": "A"},
-        {"direction": "in", "type": "float", "name": "B"},
-        {"direction": "out", "type": "float", "name": "Result"}
+        {
+          "direction": "in",
+          "name": "A",
+          "type": "float"
+        },
+        {
+          "direction": "in",
+          "name": "B",
+          "type": "float"
+        },
+        {
+          "direction": "out",
+          "name": "Result",
+          "type": "float"
+        }
       ]
     },
     {
-      "name": "Delay",
       "category": "Function",
+      "name": "Delay",
       "pins": [
-        {"direction": "in", "type": "exec", "name": ""},
-        {"direction": "in", "type": "float", "name": "Duration"},
-        {"direction": "out", "type": "exec", "name": "Completed"}
+        {
+          "direction": "in",
+          "name": "",
+          "type": "exec"
+        },
+        {
+          "direction": "in",
+          "name": "Duration",
+          "type": "float"
+        },
+        {
+          "direction": "out",
+          "name": "Completed",
+          "type": "exec"
+        }
+      ]
+    },
+    {
+      "category": "Object",
+      "name": "Vector3f",
+      "pins": [
+        {
+          "direction": "in",
+          "name": "x",
+          "type": "float"
+        },
+        {
+          "direction": "in",
+          "name": "y",
+          "type": "float"
+        },
+        {
+          "direction": "in",
+          "name": "z",
+          "type": "float"
+        },
+        {
+          "direction": "out",
+          "name": "x",
+          "type": "float"
+        },
+        {
+          "direction": "out",
+          "name": "y",
+          "type": "float"
+        },
+        {
+          "direction": "out",
+          "name": "z",
+          "type": "float"
+        }
+      ],
+      "properties": [
+        {
+          "container": "none",
+          "default": 0.0,
+          "name": "x",
+          "type": "float"
+        },
+        {
+          "container": "none",
+          "default": 0.0,
+          "name": "y",
+          "type": "float"
+        },
+        {
+          "container": "none",
+          "default": 0.0,
+          "name": "z",
+          "type": "float"
+        }
       ]
     }
   ]

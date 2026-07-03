@@ -17,17 +17,34 @@ static std::string ToLowerAscii(const std::string& text)
     return result;
 }
 
-bool ContextMenu::IsCategoryCollapsed(NodeCategory category) const
+bool ContextMenu::IsCategoryCollapsed(const std::string& category) const
 {
-    return collapsed[NodeCategoryIndex(category)];
+    for (const std::string& collapsed : collapsedCategories) {
+        if (collapsed == category) {
+            return true;
+        }
+    }
+    return false;
 }
 
-void ContextMenu::SetCategoryCollapsed(NodeCategory category, bool isCollapsed)
+void ContextMenu::SetCollapsedCategories(std::vector<std::string> categories)
 {
-    collapsed[NodeCategoryIndex(category)] = isCollapsed;
+    collapsedCategories = std::move(categories);
     if (open) {
         UpdateFilter();
     }
+}
+
+void ContextMenu::ToggleCategoryCollapsed(const std::string& category)
+{
+    for (std::size_t i = 0; i < collapsedCategories.size(); ++i) {
+        if (collapsedCategories[i] == category) {
+            collapsedCategories.erase(collapsedCategories.begin()
+                                      + static_cast<std::ptrdiff_t>(i));
+            return;
+        }
+    }
+    collapsedCategories.push_back(category);
 }
 
 void ContextMenu::Open(float screenX, float screenY, float canvasX, float canvasY,
@@ -104,19 +121,27 @@ ContextMenuAction ContextMenu::HandleEvent(const EditorInputEvent& event)
             if (index >= 0) {
                 const ContextMenuRow& row = rows[static_cast<std::size_t>(index)];
                 switch (row.kind) {
-                case ContextMenuRowKind::CategoryHeader: {
-                    const int categoryIndex = NodeCategoryIndex(row.category);
-                    collapsed[categoryIndex] = !collapsed[categoryIndex];
+                case ContextMenuRowKind::CategoryHeader:
+                    ToggleCategoryCollapsed(row.category);
                     UpdateFilter();
                     UpdateHover(event.x, event.y);
                     break;
-                }
                 case ContextMenuRowKind::NodeItem:
                     if (row.nodeClass != nullptr) {
-                        action.type = ContextMenuAction::Type::CreateNode;
+                        const bool inEditZone =
+                            event.x >= panelX + PANEL_WIDTH - PADDING - EDIT_ZONE_WIDTH;
+                        if (inEditZone && row.nodeClass->IsDynamic()) {
+                            action.type = ContextMenuAction::Type::EditClass;
+                        } else {
+                            action.type = ContextMenuAction::Type::CreateNode;
+                        }
                         action.nodeClass = row.nodeClass;
                         Close();
                     }
+                    break;
+                case ContextMenuRowKind::AddComment:
+                    action.type = ContextMenuAction::Type::AddComment;
+                    Close();
                     break;
                 case ContextMenuRowKind::CreateNewClass:
                     action.type = ContextMenuAction::Type::OpenClassEditor;
@@ -168,7 +193,31 @@ void ContextMenu::UpdateFilter()
     const std::string needle = ToLowerAscii(searchText);
     const bool searching = !needle.empty();
 
-    for (NodeCategory category : ALL_NODE_CATEGORIES) {
+    // Distinct categories: builtin names first (canonical order), then
+    // user-defined categories in registry order.
+    std::vector<std::string> categories;
+    for (const char* builtinName : BUILTIN_CATEGORY_NAMES) {
+        for (const NodeClass* nodeClass : NodeClass::GetRegistry()) {
+            if (nodeClass->GetCategory() == builtinName) {
+                categories.push_back(builtinName);
+                break;
+            }
+        }
+    }
+    for (const NodeClass* nodeClass : NodeClass::GetRegistry()) {
+        bool known = false;
+        for (const std::string& existing : categories) {
+            if (existing == nodeClass->GetCategory()) {
+                known = true;
+                break;
+            }
+        }
+        if (!known) {
+            categories.push_back(nodeClass->GetCategory());
+        }
+    }
+
+    for (const std::string& category : categories) {
         bool headerAdded = false;
         for (const NodeClass* nodeClass : NodeClass::GetRegistry()) {
             if (nodeClass->GetCategory() != category) {
@@ -186,7 +235,7 @@ void ContextMenu::UpdateFilter()
                 headerAdded = true;
             }
             // While searching, collapse is ignored so matches stay visible.
-            if (!searching && collapsed[NodeCategoryIndex(category)]) {
+            if (!searching && IsCategoryCollapsed(category)) {
                 continue;
             }
             ContextMenuRow item;
@@ -196,6 +245,10 @@ void ContextMenu::UpdateFilter()
             rows.push_back(item);
         }
     }
+
+    ContextMenuRow addCommentRow;
+    addCommentRow.kind = ContextMenuRowKind::AddComment;
+    rows.push_back(addCommentRow);
 
     ContextMenuRow createNewRow;
     createNewRow.kind = ContextMenuRowKind::CreateNewClass;

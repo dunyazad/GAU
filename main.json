@@ -1,0 +1,33 @@
+{
+  "comments": [
+    {
+      "height": 250.5,
+      "title": "Comment",
+      "width": 478.0,
+      "x": 350.5,
+      "y": 173.5
+    }
+  ],
+  "nodes": [
+    {
+      "class": "Vector3f",
+      "properties": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "x": 370.5,
+      "y": 223.5
+    },
+    {
+      "class": "Vector3f",
+      "properties": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "x": 648.5,
+      "y": 226.0
+    }
+  ]
+}

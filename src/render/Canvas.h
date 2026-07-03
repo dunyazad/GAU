@@ -30,6 +30,9 @@ public:
     // keeping the canvas point under screenPoint stationary on screen.
     void ZoomAt(Vec2 screenPoint, float zoomFactor);
 
+    // Restores a persisted view; zoom is clamped to the valid range.
+    void SetView(float panXValue, float panYValue, float zoomValue);
+
 private:
     // Canvas coordinates of the screen origin (top-left corner).
     float panX = 0.0f;

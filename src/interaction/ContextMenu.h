@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorInputEvent.h"
+#include "UIScale.h"
 
 #include "model/GraphTypes.h"
 
@@ -19,10 +20,17 @@ struct ContextMenuAction
         // "+ Create New Class..." was chosen; the caller opens the
         // class editor dialog.
         OpenClassEditor,
+        // The edit zone of a dynamic class item was clicked; the caller
+        // opens the class editor prefilled with nodeClass.
+        EditClass,
+        // "+ Add Comment" was chosen; the caller creates a comment box
+        // (around the selection if any, else default-sized at the spawn
+        // position).
+        AddComment,
     };
 
     Type type = Type::None;
-    // Class to instantiate when type == CreateNode.
+    // Class to instantiate (CreateNode) or edit (EditClass).
     const NodeClass* nodeClass = nullptr;
 };
 
@@ -30,6 +38,7 @@ enum class ContextMenuRowKind
 {
     CategoryHeader,
     NodeItem,
+    AddComment,
     CreateNewClass,
 };
 
@@ -37,7 +46,7 @@ enum class ContextMenuRowKind
 struct ContextMenuRow
 {
     ContextMenuRowKind kind = ContextMenuRowKind::NodeItem;
-    NodeCategory category = NodeCategory::Function;
+    std::string category;
     // Set only for NodeItem rows.
     const NodeClass* nodeClass = nullptr;
 };
@@ -52,11 +61,13 @@ struct ContextMenuRow
 class ContextMenu
 {
 public:
-    static constexpr float PANEL_WIDTH = 240.0f;
-    static constexpr float SEARCH_HEIGHT = 28.0f;
-    static constexpr float ITEM_HEIGHT = 22.0f;
-    static constexpr float PADDING = 6.0f;
-    static constexpr float MAX_LIST_HEIGHT = 320.0f;
+    static constexpr float PANEL_WIDTH = 240.0f * UI_SCALE;
+    static constexpr float SEARCH_HEIGHT = 28.0f * UI_SCALE;
+    static constexpr float ITEM_HEIGHT = 22.0f * UI_SCALE;
+    static constexpr float PADDING = 6.0f * UI_SCALE;
+    static constexpr float MAX_LIST_HEIGHT = 320.0f * UI_SCALE;
+    // Right-side click zone on dynamic class items that opens the editor.
+    static constexpr float EDIT_ZONE_WIDTH = 40.0f * UI_SCALE;
 
     bool IsOpen() const { return open; }
 
@@ -78,9 +89,10 @@ public:
     // Index into GetRows() of the hovered item row, or -1. Header rows
     // are never hovered.
     int GetHoveredIndex() const { return hoveredIndex; }
-    bool IsCategoryCollapsed(NodeCategory category) const;
-    // Applies persisted collapse state (e.g. from EditorSettings).
-    void SetCategoryCollapsed(NodeCategory category, bool isCollapsed);
+    bool IsCategoryCollapsed(const std::string& category) const;
+    // Applies/collects persisted collapse state (EditorSettings).
+    void SetCollapsedCategories(std::vector<std::string> categories);
+    const std::vector<std::string>& GetCollapsedCategories() const { return collapsedCategories; }
     // Scroll offset of the list content in pixels.
     float GetScrollOffset() const { return scrollOffset; }
     // Visible height of the list region.
@@ -90,6 +102,7 @@ public:
     float GetSpawnCanvasY() const { return spawnCanvasY; }
 
 private:
+    void ToggleCategoryCollapsed(const std::string& category);
     void UpdateFilter();
     void UpdateListViewHeight();
     void ClampScroll();
@@ -113,6 +126,6 @@ private:
     std::string searchText;
     std::vector<ContextMenuRow> rows;
     int hoveredIndex = -1;
-    // Indexed by CategoryIndex(); persists across menu opens.
-    bool collapsed[4] = {false, false, false, false};
+    // Names of collapsed categories; persists across menu opens.
+    std::vector<std::string> collapsedCategories;
 };

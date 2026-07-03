@@ -1,4 +1,5 @@
 #include "NodeRenderer.h"
+#include "CategoryStyle.h"
 
 #include "model/NodeGraph.h"
 
@@ -10,22 +11,64 @@ static const char* FONT_REGULAR = "sans";
 static const char* FONT_BOLD = "sans-bold";
 static const float TITLE_FONT_SIZE = 14.0f;
 static const float PIN_LABEL_FONT_SIZE = 13.0f;
+static const float PROPERTY_FONT_SIZE = 12.0f;
 static const float PIN_LABEL_GAP = 10.0f;
 static const float PIN_COLUMN_GAP = 40.0f;
 
-static NVGcolor HeaderColorForCategory(NodeCategory category)
+// Display line for one property on the node body:
+// scalar "name: v", array "name: [a, b]", set "name: {a, b}",
+// map "name: {k: v, k2: v2}".
+static std::string PropertyDisplayText(const Node& node, int propertyIndex)
 {
-    switch (category) {
-    case NodeCategory::Event:
-        return nvgRGB(150, 30, 30);
-    case NodeCategory::Function:
-        return nvgRGB(40, 80, 160);
-    case NodeCategory::FlowControl:
-        return nvgRGB(90, 90, 100);
-    case NodeCategory::Pure:
-        return nvgRGB(60, 120, 60);
+    const PropertyDef& def = node.nodeClass->GetProperties()[static_cast<std::size_t>(propertyIndex)];
+
+    PropertyValue fallback;
+    fallback.scalar = def.defaultValue;
+    fallback.elements = def.defaultElements;
+    fallback.entries = def.defaultEntries;
+    const PropertyValue& value = (propertyIndex < static_cast<int>(node.propertyValues.size()))
+                                     ? node.propertyValues[static_cast<std::size_t>(propertyIndex)]
+                                     : fallback;
+
+    switch (def.container) {
+    case PropertyContainer::None:
+        return def.name + ": " + ValueToString(value.scalar);
+
+    case PropertyContainer::Array:
+    case PropertyContainer::Set: {
+        std::string joined;
+        for (const Value& element : value.elements) {
+            if (!joined.empty()) {
+                joined += ", ";
+            }
+            joined += ValueToString(element);
+        }
+        if (def.container == PropertyContainer::Array) {
+            return def.name + ": [" + joined + "]";
+        }
+        return def.name + ": {" + joined + "}";
     }
-    return nvgRGB(90, 90, 100);
+
+    case PropertyContainer::Map: {
+        std::string joined;
+        for (const std::pair<Value, Value>& entry : value.entries) {
+            if (!joined.empty()) {
+                joined += ", ";
+            }
+            joined += ValueToString(entry.first) + ": " + ValueToString(entry.second);
+        }
+        return def.name + ": {" + joined + "}";
+    }
+    }
+    return def.name;
+}
+
+// Y offset (from node top) where property rows begin.
+static float PropertyRowsTop(int pinRowCount)
+{
+    return NODE_HEADER_HEIGHT + NODE_BODY_PADDING
+         + NODE_PIN_ROW_HEIGHT * static_cast<float>(pinRowCount)
+         + NODE_PROPERTY_SECTION_GAP;
 }
 
 static NVGcolor PinColorForType(PinType type)
@@ -97,10 +140,21 @@ NodeLayout ComputeNodeLayout(NVGcontext* vg, const Node& node)
         width = std::max(width, rowWidth);
     }
 
+    const int propertyCount = static_cast<int>(node.nodeClass->GetProperties().size());
+    for (int i = 0; i < propertyCount; ++i) {
+        const std::string text = PropertyDisplayText(node, i);
+        const float textWidth = MeasureTextWidth(vg, FONT_REGULAR, PROPERTY_FONT_SIZE, text.c_str());
+        width = std::max(width, NODE_PIN_INSET * 2.0f + textWidth);
+    }
+
     layout.width = width;
     layout.height = NODE_HEADER_HEIGHT + NODE_BODY_PADDING
                   + NODE_PIN_ROW_HEIGHT * static_cast<float>(rowCount)
                   + NODE_BODY_PADDING;
+    if (propertyCount > 0) {
+        layout.height += NODE_PROPERTY_SECTION_GAP
+                       + NODE_PROPERTY_ROW_HEIGHT * static_cast<float>(propertyCount);
+    }
 
     for (int row = 0; row < inputCount; ++row) {
         const Pin& pin = node.inputs[static_cast<std::size_t>(row)];
@@ -208,7 +262,7 @@ void DrawNode(NVGcontext* vg, const Node& node, const NodeLayout& layout, bool s
     nvgFill(vg);
 
     // Header with a left-to-right gradient: base color -> base * 0.4.
-    const NVGcolor headerBase = HeaderColorForCategory(node.nodeClass->GetCategory());
+    const NVGcolor headerBase = CategoryColor(node.nodeClass->GetCategory());
     const NVGcolor headerDark = nvgRGBf(headerBase.r * 0.4f, headerBase.g * 0.4f, headerBase.b * 0.4f);
     const NVGpaint headerPaint = nvgLinearGradient(vg, x, y, x + w, y, headerBase, headerDark);
     nvgBeginPath(vg);
@@ -246,6 +300,25 @@ void DrawNode(NVGcontext* vg, const Node& node, const NodeLayout& layout, bool s
         const Pin* pin = FindPinInNode(node, pinLayout.pinId);
         if (pin != nullptr) {
             DrawPinLabel(vg, pinLayout, pin->name.c_str());
+        }
+    }
+
+    // Property rows below the pins.
+    const int propertyCount = static_cast<int>(node.nodeClass->GetProperties().size());
+    if (propertyCount > 0) {
+        const int pinRowCount = std::max(static_cast<int>(node.inputs.size()),
+                                         static_cast<int>(node.outputs.size()));
+        const float propertyTop = y + PropertyRowsTop(pinRowCount);
+
+        nvgFontFace(vg, FONT_REGULAR);
+        nvgFontSize(vg, PROPERTY_FONT_SIZE);
+        nvgFillColor(vg, nvgRGB(160, 160, 170));
+        nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        for (int i = 0; i < propertyCount; ++i) {
+            const std::string text = PropertyDisplayText(node, i);
+            const float rowCenterY = propertyTop
+                                   + NODE_PROPERTY_ROW_HEIGHT * (static_cast<float>(i) + 0.5f);
+            nvgText(vg, x + NODE_PIN_INSET, rowCenterY, text.c_str(), nullptr);
         }
     }
 }

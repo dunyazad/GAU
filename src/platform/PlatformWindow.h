@@ -46,6 +46,9 @@ public:
 
     float GetPixelRatio() const;
 
+    // Opaque handle for other platform modules (e.g. file dialogs).
+    SDL_Window* GetSDLWindow() const { return window; }
+
 private:
     void UpdateSizes();
 

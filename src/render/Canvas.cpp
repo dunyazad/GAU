@@ -40,3 +40,10 @@ void Canvas::ZoomAt(Vec2 screenPoint, float zoomFactor)
     panX = canvasUnderCursor.x - screenPoint.x / zoom;
     panY = canvasUnderCursor.y - screenPoint.y / zoom;
 }
+
+void Canvas::SetView(float panXValue, float panYValue, float zoomValue)
+{
+    panX = panXValue;
+    panY = panYValue;
+    zoom = ClampZoom(zoomValue);
+}

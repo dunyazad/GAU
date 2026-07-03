@@ -25,8 +25,12 @@ add_executable(gau
     src/platform/PlatformWindow.cpp
     src/platform/PlatformInput.cpp
     src/platform/PlatformNVG.cpp
+    src/platform/PlatformFileDialog.cpp
     src/render/Canvas.cpp
     src/render/GridRenderer.cpp
+    src/render/SelectionRenderer.cpp
+    src/render/CommentRenderer.cpp
+    src/render/TabBarRenderer.cpp
     src/render/NodeRenderer.cpp
     src/render/ContextMenuRenderer.cpp
     src/render/ClassEditorDialogRenderer.cpp
@@ -37,8 +41,11 @@ add_executable(gau
     src/model/EditorSettings.cpp
     src/model/UndoStack.cpp
     src/model/GraphCommands.cpp
+    src/model/GraphSerializer.cpp
     src/interaction/ContextMenu.cpp
+    src/interaction/TabBar.cpp
     src/interaction/ClassEditorDialog.cpp
+    src/interaction/HitTest.cpp
 )
 target_include_directories(gau PRIVATE src external)
 target_link_libraries(gau PRIVATE SDL3::SDL3-static nanovg)
@@ -62,3 +69,16 @@ add_executable(canvas_tests
 )
 target_include_directories(canvas_tests PRIVATE src)
 add_test(NAME canvas_tests COMMAND canvas_tests)
+
+add_executable(serializer_tests
+    tests/SerializerTests.cpp
+    src/model/NodeGraph.cpp
+    src/model/NodeClass.cpp
+    src/model/BuiltinNodeClasses.cpp
+    src/model/GraphSerializer.cpp
+)
+target_include_directories(serializer_tests PRIVATE src external)
+if(MSVC)
+    target_compile_definitions(serializer_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME serializer_tests COMMAND serializer_tests)

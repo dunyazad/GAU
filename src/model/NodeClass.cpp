@@ -3,10 +3,12 @@
 #include <cstring>
 #include <utility>
 
-NodeClass::NodeClass(std::string name, NodeCategory category, std::vector<PinDef> pins)
+NodeClass::NodeClass(std::string name, std::string category, std::vector<PinDef> pins,
+                     std::vector<PropertyDef> properties)
     : name(std::move(name))
-    , category(category)
+    , category(std::move(category))
     , pins(std::move(pins))
+    , properties(std::move(properties))
 {
     MutableRegistry().push_back(this);
 }
@@ -32,8 +34,25 @@ const NodeClass* NodeClass::FindByName(const char* name)
 void NodeClass::AdoptDynamic(std::unique_ptr<NodeClass> nodeClass)
 {
     if (nodeClass != nullptr) {
+        nodeClass->dynamic = true;
         MutableDynamicStorage().push_back(std::move(nodeClass));
     }
+}
+
+bool NodeClass::UpdateDynamic(const NodeClass* target, std::string newName,
+                              std::string newCategory, std::vector<PinDef> newPins,
+                              std::vector<PropertyDef> newProperties)
+{
+    for (std::unique_ptr<NodeClass>& stored : MutableDynamicStorage()) {
+        if (stored.get() == target) {
+            stored->name = std::move(newName);
+            stored->category = std::move(newCategory);
+            stored->pins = std::move(newPins);
+            stored->properties = std::move(newProperties);
+            return true;
+        }
+    }
+    return false;
 }
 
 std::vector<const NodeClass*>& NodeClass::MutableRegistry()

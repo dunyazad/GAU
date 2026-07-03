@@ -99,6 +99,7 @@ main.cpp -> 전 계층 조립
   - 헤더 색상 팔레트:
     - Event: rgb(150,30,30), Function: rgb(40,80,160)
     - FlowControl: rgb(90,90,100), Pure: rgb(60,120,60)
+    - Object: rgb(0,120,180), CustomObject: rgb(130,60,160)
 - 핀:
   - exec 핀: 오각형 화살표, 흰색, 연결 시 채움 / 미연결 시 외곽선
   - data 핀: 원형 반경 5px, 타입별 색

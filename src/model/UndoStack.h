@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <vector>
 
@@ -29,6 +30,10 @@ public:
     // Returns false when there is nothing to undo/redo.
     bool Undo(NodeGraph& graph);
     bool Redo(NodeGraph& graph);
+
+    // Number of commands currently applied; comparing against the depth
+    // recorded at save time detects unsaved changes.
+    std::size_t GetDepth() const { return undoList.size(); }
 
 private:
     std::vector<std::unique_ptr<GraphCommand>> undoList;

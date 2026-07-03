@@ -1,4 +1,5 @@
 #include "ContextMenuRenderer.h"
+#include "CategoryStyle.h"
 
 #include "interaction/ContextMenu.h"
 #include "model/NodeClass.h"
@@ -6,42 +7,12 @@
 #include <nanovg.h>
 
 static const char* FONT_REGULAR = "sans";
-static const float MENU_FONT_SIZE = 13.0f;
-
-static const char* CategoryDisplayName(NodeCategory category)
-{
-    switch (category) {
-    case NodeCategory::Event:
-        return "Event";
-    case NodeCategory::Function:
-        return "Function";
-    case NodeCategory::FlowControl:
-        return "Flow Control";
-    case NodeCategory::Pure:
-        return "Pure";
-    }
-    return "";
-}
-
-static NVGcolor CategoryDotColor(NodeCategory category)
-{
-    switch (category) {
-    case NodeCategory::Event:
-        return nvgRGB(150, 30, 30);
-    case NodeCategory::Function:
-        return nvgRGB(40, 80, 160);
-    case NodeCategory::FlowControl:
-        return nvgRGB(90, 90, 100);
-    case NodeCategory::Pure:
-        return nvgRGB(60, 120, 60);
-    }
-    return nvgRGB(90, 90, 100);
-}
+static const float MENU_FONT_SIZE = 13.0f * UI_SCALE;
 
 static void DrawSearchBox(NVGcontext* vg, const ContextMenu& menu, float x, float y, float width)
 {
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, x, y, width, ContextMenu::SEARCH_HEIGHT, 3.0f);
+    nvgRoundedRect(vg, x, y, width, ContextMenu::SEARCH_HEIGHT, 3.0f * UI_SCALE);
     nvgFillColor(vg, nvgRGB(15, 15, 17));
     nvgFill(vg);
     nvgStrokeColor(vg, nvgRGB(60, 60, 66));
@@ -52,7 +23,7 @@ static void DrawSearchBox(NVGcontext* vg, const ContextMenu& menu, float x, floa
     nvgFontSize(vg, MENU_FONT_SIZE);
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
-    const float textX = x + 8.0f;
+    const float textX = x + 8.0f * UI_SCALE;
     const float textY = y + ContextMenu::SEARCH_HEIGHT * 0.5f;
     const std::string& searchText = menu.GetSearchText();
     if (searchText.empty()) {
@@ -71,13 +42,13 @@ static void DrawCollapseArrow(NVGcontext* vg, float x, float centerY, bool isCol
 {
     nvgBeginPath(vg);
     if (isCollapsed) {
-        nvgMoveTo(vg, x, centerY - 4.0f);
-        nvgLineTo(vg, x, centerY + 4.0f);
-        nvgLineTo(vg, x + 5.0f, centerY);
+        nvgMoveTo(vg, x, centerY - 4.0f * UI_SCALE);
+        nvgLineTo(vg, x, centerY + 4.0f * UI_SCALE);
+        nvgLineTo(vg, x + 5.0f * UI_SCALE, centerY);
     } else {
-        nvgMoveTo(vg, x - 1.0f, centerY - 2.0f);
-        nvgLineTo(vg, x + 7.0f, centerY - 2.0f);
-        nvgLineTo(vg, x + 3.0f, centerY + 3.0f);
+        nvgMoveTo(vg, x - 1.0f * UI_SCALE, centerY - 2.0f * UI_SCALE);
+        nvgLineTo(vg, x + 7.0f * UI_SCALE, centerY - 2.0f * UI_SCALE);
+        nvgLineTo(vg, x + 3.0f * UI_SCALE, centerY + 3.0f * UI_SCALE);
     }
     nvgClosePath(vg);
     nvgFillColor(vg, nvgRGB(150, 150, 158));
@@ -87,15 +58,15 @@ static void DrawCollapseArrow(NVGcontext* vg, float x, float centerY, bool isCol
 static void DrawHeaderRow(NVGcontext* vg, const ContextMenu& menu, const ContextMenuRow& row,
                           float x, float centerY)
 {
-    DrawCollapseArrow(vg, x + 5.0f, centerY, menu.IsCategoryCollapsed(row.category));
+    DrawCollapseArrow(vg, x + 5.0f * UI_SCALE, centerY, menu.IsCategoryCollapsed(row.category));
 
     nvgBeginPath(vg);
-    nvgCircle(vg, x + 20.0f, centerY, 3.0f);
-    nvgFillColor(vg, CategoryDotColor(row.category));
+    nvgCircle(vg, x + 20.0f * UI_SCALE, centerY, 3.0f * UI_SCALE);
+    nvgFillColor(vg, CategoryColor(row.category));
     nvgFill(vg);
 
     nvgFillColor(vg, nvgRGB(150, 150, 158));
-    nvgText(vg, x + 28.0f, centerY, CategoryDisplayName(row.category), nullptr);
+    nvgText(vg, x + 28.0f * UI_SCALE, centerY, CategoryDisplayName(row.category).c_str(), nullptr);
 }
 
 static void DrawScrollbar(NVGcontext* vg, const ContextMenu& menu, float panelRight, float listTop)
@@ -106,24 +77,25 @@ static void DrawScrollbar(NVGcontext* vg, const ContextMenu& menu, float panelRi
         return;
     }
 
-    const float trackX = panelRight - 5.0f;
-    const float trackWidth = 3.0f;
+    const float trackWidth = 3.0f * UI_SCALE;
+    const float trackX = panelRight - trackWidth - 2.0f * UI_SCALE;
 
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, trackX, listTop, trackWidth, viewHeight, 1.5f);
+    nvgRoundedRect(vg, trackX, listTop, trackWidth, viewHeight, trackWidth * 0.5f);
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 20));
     nvgFill(vg);
 
     float thumbHeight = viewHeight * viewHeight / contentHeight;
-    if (thumbHeight < 20.0f) {
-        thumbHeight = 20.0f;
+    const float minThumbHeight = 20.0f * UI_SCALE;
+    if (thumbHeight < minThumbHeight) {
+        thumbHeight = minThumbHeight;
     }
     const float maxScroll = contentHeight - viewHeight;
     const float thumbTravel = viewHeight - thumbHeight;
     const float thumbY = listTop + (menu.GetScrollOffset() / maxScroll) * thumbTravel;
 
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, trackX, thumbY, trackWidth, thumbHeight, 1.5f);
+    nvgRoundedRect(vg, trackX, thumbY, trackWidth, thumbHeight, trackWidth * 0.5f);
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 90));
     nvgFill(vg);
 }
@@ -140,7 +112,8 @@ static void DrawMenuItems(NVGcontext* vg, const ContextMenu& menu, float x, floa
 
     if (rows.empty()) {
         nvgFillColor(vg, nvgRGB(120, 120, 128));
-        nvgText(vg, x + 8.0f, listTop + ContextMenu::ITEM_HEIGHT * 0.5f, "No results", nullptr);
+        nvgText(vg, x + 8.0f * UI_SCALE, listTop + ContextMenu::ITEM_HEIGHT * 0.5f,
+                "No results", nullptr);
         return;
     }
 
@@ -163,26 +136,41 @@ static void DrawMenuItems(NVGcontext* vg, const ContextMenu& menu, float x, floa
 
         if (i == menu.GetHoveredIndex()) {
             nvgBeginPath(vg);
-            nvgRoundedRect(vg, x + 2.0f, rowY, width - 4.0f, ContextMenu::ITEM_HEIGHT, 2.0f);
+            nvgRoundedRect(vg, x + 2.0f * UI_SCALE, rowY, width - 4.0f * UI_SCALE,
+                           ContextMenu::ITEM_HEIGHT, 2.0f * UI_SCALE);
             nvgFillColor(vg, nvgRGBA(70, 110, 180, 220));
             nvgFill(vg);
         }
 
-        if (row.kind == ContextMenuRowKind::CreateNewClass) {
-            nvgBeginPath(vg);
-            nvgMoveTo(vg, x + 4.0f, rowY + 0.5f);
-            nvgLineTo(vg, x + width - 4.0f, rowY + 0.5f);
-            nvgStrokeColor(vg, nvgRGB(60, 60, 66));
-            nvgStrokeWidth(vg, 1.0f);
-            nvgStroke(vg);
+        if (row.kind == ContextMenuRowKind::AddComment
+            || row.kind == ContextMenuRowKind::CreateNewClass) {
+            if (row.kind == ContextMenuRowKind::AddComment) {
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, x + 4.0f * UI_SCALE, rowY + 0.5f);
+                nvgLineTo(vg, x + width - 4.0f * UI_SCALE, rowY + 0.5f);
+                nvgStrokeColor(vg, nvgRGB(60, 60, 66));
+                nvgStrokeWidth(vg, 1.0f);
+                nvgStroke(vg);
+            }
 
             nvgFillColor(vg, nvgRGB(140, 180, 240));
-            nvgText(vg, x + 8.0f, centerY, "+ Create New Class...", nullptr);
+            nvgText(vg, x + 8.0f * UI_SCALE, centerY,
+                    row.kind == ContextMenuRowKind::AddComment ? "+ Add Comment"
+                                                               : "+ Create New Class...",
+                    nullptr);
             continue;
         }
 
         nvgFillColor(vg, nvgRGB(225, 225, 230));
-        nvgText(vg, x + 28.0f, centerY, row.nodeClass->GetName(), nullptr);
+        nvgText(vg, x + 28.0f * UI_SCALE, centerY, row.nodeClass->GetName(), nullptr);
+
+        // Dynamic classes show an edit affordance while hovered.
+        if (i == menu.GetHoveredIndex() && row.nodeClass->IsDynamic()) {
+            nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            nvgFillColor(vg, nvgRGB(180, 200, 230));
+            nvgText(vg, x + width - 8.0f * UI_SCALE, centerY, "edit", nullptr);
+            nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        }
     }
 
     nvgRestore(vg);
@@ -201,7 +189,7 @@ void DrawContextMenu(NVGcontext* vg, const ContextMenu& menu)
 
     // Panel background.
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, x, y, width, height, 4.0f);
+    nvgRoundedRect(vg, x, y, width, height, 4.0f * UI_SCALE);
     nvgFillColor(vg, nvgRGBA(20, 20, 22, 245));
     nvgFill(vg);
     nvgStrokeColor(vg, nvgRGB(60, 60, 66));

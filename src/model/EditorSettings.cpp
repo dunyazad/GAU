@@ -21,22 +21,49 @@ bool EditorSettings::LoadFromFile(const std::string& path)
         return false;
     }
 
-    for (bool& flag : categoryCollapsed) {
-        flag = false;
-    }
+    collapsedCategories.clear();
+    openFiles.clear();
+    activeFilePath.clear();
 
     if (root.contains("contextMenu") && root["contextMenu"].is_object()) {
         const json& menu = root["contextMenu"];
         if (menu.contains("collapsedCategories") && menu["collapsedCategories"].is_array()) {
             for (const json& entry : menu["collapsedCategories"]) {
-                if (!entry.is_string()) {
-                    continue;
-                }
-                NodeCategory category = NodeCategory::Function;
-                if (NodeCategoryFromString(entry.get<std::string>(), category)) {
-                    categoryCollapsed[NodeCategoryIndex(category)] = true;
+                if (entry.is_string() && !entry.get<std::string>().empty()) {
+                    collapsedCategories.push_back(entry.get<std::string>());
                 }
             }
+        }
+    }
+
+    if (root.contains("session") && root["session"].is_object()) {
+        const json& session = root["session"];
+        if (session.contains("openFiles") && session["openFiles"].is_array()) {
+            for (const json& entry : session["openFiles"]) {
+                OpenFileEntry openFile;
+                // Older files stored plain path strings; accept both.
+                if (entry.is_string()) {
+                    openFile.path = entry.get<std::string>();
+                } else if (entry.is_object()
+                           && entry.contains("path") && entry["path"].is_string()) {
+                    openFile.path = entry["path"].get<std::string>();
+                    if (entry.contains("panX") && entry["panX"].is_number()) {
+                        openFile.panX = entry["panX"].get<float>();
+                    }
+                    if (entry.contains("panY") && entry["panY"].is_number()) {
+                        openFile.panY = entry["panY"].get<float>();
+                    }
+                    if (entry.contains("zoom") && entry["zoom"].is_number()) {
+                        openFile.zoom = entry["zoom"].get<float>();
+                    }
+                }
+                if (!openFile.path.empty()) {
+                    openFiles.push_back(std::move(openFile));
+                }
+            }
+        }
+        if (session.contains("activeFile") && session["activeFile"].is_string()) {
+            activeFilePath = session["activeFile"].get<std::string>();
         }
     }
     return true;
@@ -45,14 +72,24 @@ bool EditorSettings::LoadFromFile(const std::string& path)
 bool EditorSettings::SaveToFile(const std::string& path) const
 {
     json collapsedArray = json::array();
-    for (NodeCategory category : ALL_NODE_CATEGORIES) {
-        if (categoryCollapsed[NodeCategoryIndex(category)]) {
-            collapsedArray.push_back(NodeCategoryToString(category));
-        }
+    for (const std::string& category : collapsedCategories) {
+        collapsedArray.push_back(category);
+    }
+
+    json openArray = json::array();
+    for (const OpenFileEntry& openFile : openFiles) {
+        json entry;
+        entry["path"] = openFile.path;
+        entry["panX"] = openFile.panX;
+        entry["panY"] = openFile.panY;
+        entry["zoom"] = openFile.zoom;
+        openArray.push_back(entry);
     }
 
     json root;
     root["contextMenu"]["collapsedCategories"] = collapsedArray;
+    root["session"]["openFiles"] = openArray;
+    root["session"]["activeFile"] = activeFilePath;
 
     std::ofstream file(path);
     if (!file.is_open()) {
