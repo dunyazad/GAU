@@ -6,7 +6,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <variant>
+#include <vector>
 
 // Pure data types shared across the model layer.
 // This layer must stay free of SDL/rendering includes.
@@ -39,6 +41,11 @@ constexpr float COMMENT_WRAP_PADDING = 20.0f;
 // Alternatives map to PinType: Bool->bool, Int->int, Float->double,
 // String->std::string.
 using Value = std::variant<bool, int, double, std::string>;
+
+// Evaluated output-pin values keyed by PinId. Produced by the exec
+// engine's display preview and read by the renderer to show live values
+// on linked node property rows.
+using PinValueCache = std::vector<std::pair<PinId, Value>>;
 
 enum class PinType
 {

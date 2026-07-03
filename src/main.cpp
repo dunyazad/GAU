@@ -679,7 +679,8 @@ static void RenderComments(NVGcontext* vg, const Canvas& canvas, const NodeGraph
 static void RenderNodes(NVGcontext* vg, const Canvas& canvas,
                         const NodeGraph& graph, NodeLayoutCache& layoutCache,
                         const std::vector<NodeId>& selectedNodes,
-                        PinId draggingLinkPinId, float linkDragCanvasX, float linkDragCanvasY)
+                        PinId draggingLinkPinId, float linkDragCanvasX, float linkDragCanvasY,
+                        const PinValueCache& previewValues)
 {
     layoutCache.Clear();
 
@@ -690,7 +691,7 @@ static void RenderNodes(NVGcontext* vg, const Canvas& canvas,
     // First pass: layouts (with pin connection state) so links can be
     // drawn beneath the node bodies.
     for (const Node& node : graph.GetNodes()) {
-        NodeLayout layout = ComputeNodeLayout(vg, node);
+        NodeLayout layout = ComputeNodeLayout(vg, node, graph, previewValues);
         for (PinLayout& pinLayout : layout.pins) {
             pinLayout.connected = graph.IsPinConnected(pinLayout.pinId);
         }
@@ -702,7 +703,8 @@ static void RenderNodes(NVGcontext* vg, const Canvas& canvas,
     for (const Node& node : graph.GetNodes()) {
         const NodeLayout* layout = layoutCache.Find(node.id);
         if (layout != nullptr) {
-            DrawNode(vg, node, *layout, ContainsNodeId(selectedNodes, node.id));
+            DrawNode(vg, node, *layout, ContainsNodeId(selectedNodes, node.id),
+                     graph, previewValues);
         }
     }
 
@@ -768,6 +770,11 @@ struct Document
     std::string displayName = "Untitled";
     // Undo depth at the last successful save; differing depth = dirty.
     std::size_t savedUndoDepth = 0;
+
+    // Cached data-preview values for node body display, refreshed only
+    // when the undo revision changes. Sentinel forces a first compute.
+    PinValueCache previewValues;
+    std::uint64_t previewRevision = UINT64_MAX;
 
     bool IsDirty() const { return undoStack.GetDepth() != savedUndoDepth; }
 };
@@ -1819,9 +1826,15 @@ int main(int argc, char** argv)
         DrawGrid(vg, doc.canvas, screenWidth, screenHeight);
         RenderComments(vg, doc.canvas, doc.graph, controller.editingCommentId,
                        controller.titleEditText);
+        if (doc.previewRevision != doc.undoStack.GetRevision()) {
+            ExecEngine previewEngine(doc.graph, [](const std::string&) {});
+            doc.previewValues = previewEngine.EvaluateDataPreview();
+            doc.previewRevision = doc.undoStack.GetRevision();
+        }
         RenderNodes(vg, doc.canvas, doc.graph, layoutCache, controller.selectedNodes,
                     controller.draggingLinkPinId,
-                    controller.linkDragCanvasX, controller.linkDragCanvasY);
+                    controller.linkDragCanvasX, controller.linkDragCanvasY,
+                    doc.previewValues);
         if (controller.rubberBanding) {
             DrawRubberBand(vg, doc.canvas,
                            controller.bandStartCanvasX, controller.bandStartCanvasY,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -35,7 +36,14 @@ public:
     // recorded at save time detects unsaved changes.
     std::size_t GetDepth() const { return undoList.size(); }
 
+    // Monotonic counter bumped on every applied Execute/Undo/Redo. Unlike
+    // GetDepth it never repeats, so callers can gate cached derivations
+    // (e.g. the editor's data preview) on real state changes even across
+    // undo-then-different-edit sequences that land on the same depth.
+    std::uint64_t GetRevision() const { return revision; }
+
 private:
     std::vector<std::unique_ptr<GraphCommand>> undoList;
     std::vector<std::unique_ptr<GraphCommand>> redoList;
+    std::uint64_t revision = 0;
 };

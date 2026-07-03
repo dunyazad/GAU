@@ -62,6 +62,13 @@ public:
     // node exists or the execution budget was exceeded.
     bool Run();
 
+    // Side-effect-free pass for the editor: pull-evaluates every non-exec
+    // output pin so pure/data-carrier chains report their current values.
+    // Exec chains are not run, so PrintString and friends never fire.
+    // Non-pure nodes' data outputs stay absent (only known after a real
+    // run). Returns the evaluated PinId -> Value map.
+    PinValueCache EvaluateDataPreview();
+
     void Log(const std::string& message);
 
 private:

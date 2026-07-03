@@ -7,6 +7,7 @@ bool UndoStack::Execute(std::unique_ptr<GraphCommand> command, NodeGraph& graph)
     }
     undoList.push_back(std::move(command));
     redoList.clear();
+    ++revision;
     return true;
 }
 
@@ -19,6 +20,7 @@ bool UndoStack::Undo(NodeGraph& graph)
     undoList.pop_back();
     command->Undo(graph);
     redoList.push_back(std::move(command));
+    ++revision;
     return true;
 }
 
@@ -33,5 +35,6 @@ bool UndoStack::Redo(NodeGraph& graph)
         return false;
     }
     undoList.push_back(std::move(command));
+    ++revision;
     return true;
 }

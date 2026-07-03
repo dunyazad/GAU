@@ -1,9 +1,11 @@
 #pragma once
 
 #include "NodeLayoutCache.h"
+#include "model/GraphTypes.h"
 
 struct NVGcontext;
 struct Node;
+class NodeGraph;
 
 // Node visual constants from the design spec (canvas units at zoom 1).
 constexpr float NODE_CORNER_RADIUS = 6.0f;
@@ -17,9 +19,15 @@ constexpr float NODE_PROPERTY_ROW_HEIGHT = 20.0f;
 constexpr float NODE_PROPERTY_SECTION_GAP = 4.0f;
 
 // Computes the canvas-space layout (size, pin centers) for a node.
-// Uses vg only for text measurement. Stateless.
-NodeLayout ComputeNodeLayout(NVGcontext* vg, const Node& node);
+// Uses vg only for text measurement. Stateless. graph and previewValues
+// size the body to any live linked-property text.
+NodeLayout ComputeNodeLayout(NVGcontext* vg, const Node& node,
+                             const NodeGraph& graph, const PinValueCache& previewValues);
 
 // Draws one node using a layout produced by ComputeNodeLayout.
 // Assumes the canvas transform is already applied to vg. Stateless.
-void DrawNode(NVGcontext* vg, const Node& node, const NodeLayout& layout, bool selected);
+// graph and previewValues let property rows whose same-named input pin
+// is linked show the evaluated source value instead of the static
+// property.
+void DrawNode(NVGcontext* vg, const Node& node, const NodeLayout& layout, bool selected,
+              const NodeGraph& graph, const PinValueCache& previewValues);

@@ -88,6 +88,23 @@ bool ExecEngine::Run()
     return !aborted;
 }
 
+PinValueCache ExecEngine::EvaluateDataPreview()
+{
+    executedCount = 0;
+    aborted = false;
+    outputCache.clear();
+
+    for (const Node& node : graph.GetNodes()) {
+        for (const Pin& outputPin : node.outputs) {
+            if (outputPin.type == PinType::Exec || aborted) {
+                continue;
+            }
+            EvaluateOutputPin(outputPin.id, 0);
+        }
+    }
+    return outputCache;
+}
+
 bool ExecEngine::ExecuteNode(const Node& node)
 {
     if (aborted) {

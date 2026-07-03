@@ -19,7 +19,33 @@ static const float PIN_COLUMN_GAP = 40.0f;
 // Display line for one property on the node body:
 // scalar "name: v", array "name: [a, b]", set "name: {a, b}",
 // map "name: {k: v, k2: v2}".
-static std::string PropertyDisplayText(const Node& node, int propertyIndex)
+// When a scalar property has a same-named input pin that is linked,
+// returns the evaluated source value ("(linked)" if the source value is
+// not known without a full run). Returns empty when no such live value
+// applies, so the caller falls back to the static property.
+static std::string LinkedScalarDisplay(const Node& node, const std::string& propertyName,
+                                       const NodeGraph& graph, const PinValueCache& previewValues)
+{
+    for (const Pin& inputPin : node.inputs) {
+        if (inputPin.type == PinType::Exec || inputPin.name != propertyName) {
+            continue;
+        }
+        const Link* link = graph.FindLinkToInput(inputPin.id);
+        if (link == nullptr) {
+            return std::string();
+        }
+        for (const std::pair<PinId, Value>& entry : previewValues) {
+            if (entry.first == link->fromPinId) {
+                return propertyName + ": " + ValueToString(entry.second);
+            }
+        }
+        return propertyName + ": (linked)";
+    }
+    return std::string();
+}
+
+static std::string PropertyDisplayText(const Node& node, int propertyIndex,
+                                       const NodeGraph& graph, const PinValueCache& previewValues)
 {
     const PropertyDef& def = node.nodeClass->GetProperties()[static_cast<std::size_t>(propertyIndex)];
 
@@ -32,8 +58,13 @@ static std::string PropertyDisplayText(const Node& node, int propertyIndex)
                                      : fallback;
 
     switch (def.container) {
-    case PropertyContainer::None:
+    case PropertyContainer::None: {
+        const std::string linked = LinkedScalarDisplay(node, def.name, graph, previewValues);
+        if (!linked.empty()) {
+            return linked;
+        }
         return def.name + ": " + ValueToString(value.scalar);
+    }
 
     case PropertyContainer::Array:
     case PropertyContainer::Set: {
@@ -91,7 +122,8 @@ static float PinRowCenterY(int rowIndex)
          + NODE_PIN_ROW_HEIGHT * 0.5f;
 }
 
-NodeLayout ComputeNodeLayout(NVGcontext* vg, const Node& node)
+NodeLayout ComputeNodeLayout(NVGcontext* vg, const Node& node,
+                             const NodeGraph& graph, const PinValueCache& previewValues)
 {
     NodeLayout layout;
     layout.nodeId = node.id;
@@ -124,7 +156,7 @@ NodeLayout ComputeNodeLayout(NVGcontext* vg, const Node& node)
 
     const int propertyCount = static_cast<int>(node.nodeClass->GetProperties().size());
     for (int i = 0; i < propertyCount; ++i) {
-        const std::string text = PropertyDisplayText(node, i);
+        const std::string text = PropertyDisplayText(node, i, graph, previewValues);
         const float textWidth = MeasureTextWidth(vg, FONT_REGULAR, PROPERTY_FONT_SIZE, text.c_str());
         width = std::max(width, NODE_PIN_INSET * 2.0f + textWidth);
     }
@@ -230,7 +262,8 @@ static const Pin* FindPinInNode(const Node& node, PinId pinId)
     return nullptr;
 }
 
-void DrawNode(NVGcontext* vg, const Node& node, const NodeLayout& layout, bool selected)
+void DrawNode(NVGcontext* vg, const Node& node, const NodeLayout& layout, bool selected,
+              const NodeGraph& graph, const PinValueCache& previewValues)
 {
     const float x = layout.x;
     const float y = layout.y;
@@ -297,7 +330,7 @@ void DrawNode(NVGcontext* vg, const Node& node, const NodeLayout& layout, bool s
         nvgFillColor(vg, nvgRGB(160, 160, 170));
         nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         for (int i = 0; i < propertyCount; ++i) {
-            const std::string text = PropertyDisplayText(node, i);
+            const std::string text = PropertyDisplayText(node, i, graph, previewValues);
             const float rowCenterY = propertyTop
                                    + NODE_PROPERTY_ROW_HEIGHT * (static_cast<float>(i) + 0.5f);
             nvgText(vg, x + NODE_PIN_INSET, rowCenterY, text.c_str(), nullptr);
