@@ -8,3 +8,4 @@ ios/build/
 
 # Per-user editor state
 editor_settings.json
+.gau_session/

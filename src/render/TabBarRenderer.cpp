@@ -25,7 +25,8 @@ static void DrawBarButton(NVGcontext* vg, const UIRect& rect, const char* label)
 }
 
 void DrawTabBar(NVGcontext* vg, const std::vector<std::string>& tabNames,
-                int activeTabIndex, float screenWidth)
+                int activeTabIndex, float screenWidth,
+                int renamingTabIndex, const std::string& renameText)
 {
     // Bar background.
     nvgBeginPath(vg);
@@ -45,29 +46,33 @@ void DrawTabBar(NVGcontext* vg, const std::vector<std::string>& tabNames,
     for (int i = 0; i < static_cast<int>(tabNames.size()); ++i) {
         const UIRect tab = TabRect(i);
         const bool active = (i == activeTabIndex);
+        const bool renaming = (i == renamingTabIndex);
 
         nvgBeginPath(vg);
         nvgRect(vg, tab.x, tab.y, tab.w, tab.h);
-        nvgFillColor(vg, active ? nvgRGB(34, 34, 40) : nvgRGB(24, 24, 27));
+        nvgFillColor(vg, renaming ? nvgRGB(15, 15, 17)
+                                  : (active ? nvgRGB(34, 34, 40) : nvgRGB(24, 24, 27)));
         nvgFill(vg);
-        nvgStrokeColor(vg, nvgRGB(50, 50, 56));
-        nvgStrokeWidth(vg, 1.0f);
+        nvgStrokeColor(vg, renaming ? nvgRGB(70, 110, 180) : nvgRGB(50, 50, 56));
+        nvgStrokeWidth(vg, renaming ? 1.5f : 1.0f);
         nvgStroke(vg);
 
-        if (active) {
+        if (active && !renaming) {
             nvgBeginPath(vg);
             nvgRect(vg, tab.x, tab.y, tab.w, 2.0f * UI_SCALE);
             nvgFillColor(vg, nvgRGB(70, 110, 180));
             nvgFill(vg);
         }
 
-        // Name, clipped to leave room for the close button.
+        // Name (or the rename buffer with a caret), clipped to leave
+        // room for the close button.
         nvgSave(vg);
         nvgIntersectScissor(vg, tab.x, tab.y, tab.w - TAB_CLOSE_WIDTH, tab.h);
-        nvgFillColor(vg, active ? nvgRGB(235, 235, 240) : nvgRGB(160, 160, 168));
+        nvgFillColor(vg, (active || renaming) ? nvgRGB(235, 235, 240) : nvgRGB(160, 160, 168));
         nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        nvgText(vg, tab.x + 8.0f * UI_SCALE, tab.y + tab.h * 0.5f,
-                tabNames[static_cast<std::size_t>(i)].c_str(), nullptr);
+        const std::string shown = renaming ? renameText + "|"
+                                           : tabNames[static_cast<std::size_t>(i)];
+        nvgText(vg, tab.x + 8.0f * UI_SCALE, tab.y + tab.h * 0.5f, shown.c_str(), nullptr);
         nvgRestore(vg);
 
         const UIRect close = TabCloseRect(i);

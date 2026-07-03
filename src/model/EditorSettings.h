@@ -7,10 +7,14 @@
 // (editor_settings.json). Loaded at startup, saved on exit. To persist a
 // new piece of state: add a member here and extend LoadFromFile/SaveToFile.
 // One remembered open document: its file and the canvas view it had.
-// zoom == 0 means "no saved view" (use the default zoom).
+// zoom == 0 means "no saved view" (use the default zoom). Untitled
+// documents are backed by an auto-managed session file: path points at
+// that file, untitled stays true and displayName keeps the tab name.
 struct OpenFileEntry
 {
     std::string path;
+    bool untitled = false;
+    std::string displayName;
     float panX = 0.0f;
     float panY = 0.0f;
     float zoom = 0.0f;

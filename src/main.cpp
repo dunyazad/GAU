@@ -564,6 +564,10 @@ static void LoadCustomNodeClasses()
 
 static const char* EDITOR_SETTINGS_PATH = "editor_settings.json";
 
+// Directory holding auto-saved graphs of untitled documents so they
+// survive restarts without an explicit save.
+static const char* SESSION_DIR = ".gau_session";
+
 // One open graph file: its own model, undo history and view.
 struct Document
 {
@@ -653,11 +657,22 @@ static bool SaveDocumentBlocking(Document& doc, PlatformWindow& window)
     return SaveDocumentToKnownPath(doc);
 }
 
-// Asks about unsaved changes when needed. Returns false when closing
-// must be aborted (cancel or failed/cancelled save).
-static bool ConfirmDocumentClose(Document& doc, PlatformWindow& window)
+static bool UntitledHasContent(const Document& doc)
 {
-    if (!doc.IsDirty()) {
+    return doc.filePath.empty()
+        && (!doc.graph.GetNodes().empty() || !doc.graph.GetComments().empty());
+}
+
+// Asks about unsaved changes when needed. discardsDocument is true for
+// tab closes (the document is really lost); at quit untitled documents
+// are auto-persisted to the session, so only titled dirty documents
+// prompt. Returns false when closing must be aborted.
+static bool ConfirmDocumentClose(Document& doc, PlatformWindow& window, bool discardsDocument)
+{
+    const bool needsPrompt = discardsDocument
+                                 ? (doc.IsDirty() || UntitledHasContent(doc))
+                                 : (doc.IsDirty() && !doc.filePath.empty());
+    if (!needsPrompt) {
         return true;
     }
     switch (ShowConfirmSaveDialog(window.GetSDLWindow(), doc.displayName)) {
@@ -671,13 +686,90 @@ static bool ConfirmDocumentClose(Document& doc, PlatformWindow& window)
     return false;
 }
 
+// Inline rename of a tab title, started by clicking the active tab.
+struct TabRenameState
+{
+    // Document index being renamed, -1 when inactive.
+    int docIndex = -1;
+    std::string text;
+
+    bool IsActive() const { return docIndex >= 0; }
+};
+
+static void PopLastUTF8Character(std::string& text)
+{
+    while (!text.empty() && (static_cast<unsigned char>(text.back()) & 0xC0) == 0x80) {
+        text.pop_back();
+    }
+    if (!text.empty()) {
+        text.pop_back();
+    }
+}
+
+static std::string TrimSpaces(const std::string& text)
+{
+    std::size_t begin = 0;
+    std::size_t end = text.size();
+    while (begin < end && text[begin] == ' ') {
+        ++begin;
+    }
+    while (end > begin && text[end - 1] == ' ') {
+        --end;
+    }
+    return text.substr(begin, end - begin);
+}
+
+// Applies the rename: saved documents are renamed on disk (keeping a
+// .json extension); untitled documents only change their display name.
+static void CommitTabRename(TabRenameState& rename,
+                            std::vector<std::unique_ptr<Document>>& documents)
+{
+    if (!rename.IsActive() || rename.docIndex >= static_cast<int>(documents.size())) {
+        rename = TabRenameState();
+        return;
+    }
+    Document& doc = *documents[static_cast<std::size_t>(rename.docIndex)];
+    const std::string newName = TrimSpaces(rename.text);
+    rename = TabRenameState();
+
+    if (newName.empty() || newName == doc.displayName) {
+        return;
+    }
+    if (doc.filePath.empty()) {
+        doc.displayName = newName;
+        return;
+    }
+
+    const std::filesystem::path oldPath(doc.filePath);
+    std::filesystem::path newPath = oldPath.parent_path() / newName;
+    if (newPath.extension().empty()) {
+        newPath += ".json";
+    }
+    if (newPath == oldPath) {
+        return;
+    }
+    std::error_code ec;
+    if (std::filesystem::exists(newPath, ec)) {
+        std::printf("rename failed: file already exists: %s\n", newPath.string().c_str());
+        return;
+    }
+    std::filesystem::rename(oldPath, newPath, ec);
+    if (ec) {
+        std::printf("rename failed: %s\n", ec.message().c_str());
+        return;
+    }
+    doc.filePath = newPath.string();
+    doc.displayName = newPath.filename().string();
+    std::printf("renamed: %s\n", doc.filePath.c_str());
+}
+
 // Prompts for every dirty document before quitting; documents stay open
 // so the session file still records them. Returns false to abort quit.
 static bool ConfirmQuit(std::vector<std::unique_ptr<Document>>& documents,
                         PlatformWindow& window)
 {
     for (std::unique_ptr<Document>& doc : documents) {
-        if (!ConfirmDocumentClose(*doc, window)) {
+        if (!ConfirmDocumentClose(*doc, window, false)) {
             return false;
         }
     }
@@ -741,51 +833,95 @@ static int RestoreSessionDocuments(const EditorSettings& settings,
                                    std::vector<std::unique_ptr<Document>>& documents,
                                    const PlatformWindow& window)
 {
+    int activeIndex = 0;
     for (const OpenFileEntry& openFile : settings.openFiles) {
         std::error_code ec;
         if (!std::filesystem::exists(openFile.path, ec)) {
             std::printf("session restore: file missing, skipped: %s\n", openFile.path.c_str());
             continue;
         }
-        if (OpenDocumentFromPath(openFile.path, documents, window) && openFile.zoom > 0.0f) {
-            documents.back()->canvas.SetView(openFile.panX, openFile.panY, openFile.zoom);
+        if (!OpenDocumentFromPath(openFile.path, documents, window)) {
+            continue;
+        }
+        Document& doc = *documents.back();
+        if (openFile.untitled) {
+            // Restore as untitled: the backing file is session-managed.
+            doc.filePath.clear();
+            doc.displayName = openFile.displayName.empty() ? "Untitled" : openFile.displayName;
+        }
+        if (openFile.zoom > 0.0f) {
+            doc.canvas.SetView(openFile.panX, openFile.panY, openFile.zoom);
+        }
+        if (!settings.activeFilePath.empty() && openFile.path == settings.activeFilePath) {
+            activeIndex = static_cast<int>(documents.size()) - 1;
         }
     }
-
-    for (int i = 0; i < static_cast<int>(documents.size()); ++i) {
-        if (!settings.activeFilePath.empty()
-            && documents[static_cast<std::size_t>(i)]->filePath == settings.activeFilePath) {
-            return i;
-        }
-    }
-    return 0;
+    return activeIndex;
 }
 
-// Records the open documents (files only) for the next session.
+// Records the open documents for the next session. Untitled documents
+// with content are auto-saved into SESSION_DIR backing files so they
+// survive restarts without an explicit save.
 static void CollectSessionDocuments(EditorSettings& settings,
                                     const std::vector<std::unique_ptr<Document>>& documents,
                                     int activeDocIndex)
 {
-    settings.openFiles.clear();
-    for (const std::unique_ptr<Document>& doc : documents) {
-        if (doc->filePath.empty()) {
-            continue;
+    std::error_code ec;
+    std::filesystem::create_directories(SESSION_DIR, ec);
+    // Drop backing files from the previous session; live ones are
+    // rewritten below.
+    if (std::filesystem::is_directory(SESSION_DIR, ec)) {
+        for (const auto& dirEntry : std::filesystem::directory_iterator(SESSION_DIR, ec)) {
+            const std::string fileName = dirEntry.path().filename().string();
+            if (fileName.rfind("untitled_", 0) == 0 && dirEntry.path().extension() == ".json") {
+                std::filesystem::remove(dirEntry.path(), ec);
+            }
         }
+    }
+
+    settings.openFiles.clear();
+    settings.activeFilePath.clear();
+    int untitledCounter = 0;
+
+    for (int i = 0; i < static_cast<int>(documents.size()); ++i) {
+        const Document& doc = *documents[static_cast<std::size_t>(i)];
         OpenFileEntry entry;
-        entry.path = doc->filePath;
-        entry.panX = doc->canvas.GetPanX();
-        entry.panY = doc->canvas.GetPanY();
-        entry.zoom = doc->canvas.GetZoom();
+
+        if (doc.filePath.empty()) {
+            if (!UntitledHasContent(doc)) {
+                continue;
+            }
+            ++untitledCounter;
+            const std::filesystem::path backingPath =
+                std::filesystem::path(SESSION_DIR)
+                / ("untitled_" + std::to_string(untitledCounter) + ".json");
+            std::string error;
+            if (!SaveGraphToFile(doc.graph, backingPath.string(), error)) {
+                std::printf("session save failed: %s\n", error.c_str());
+                continue;
+            }
+            entry.path = backingPath.string();
+            entry.untitled = true;
+            entry.displayName = doc.displayName;
+        } else {
+            entry.path = doc.filePath;
+        }
+
+        entry.panX = doc.canvas.GetPanX();
+        entry.panY = doc.canvas.GetPanY();
+        entry.zoom = doc.canvas.GetZoom();
+        if (i == activeDocIndex) {
+            settings.activeFilePath = entry.path;
+        }
         settings.openFiles.push_back(std::move(entry));
     }
-    settings.activeFilePath = documents[static_cast<std::size_t>(activeDocIndex)]->filePath;
 }
 
 // Handles a left click on the tab bar. Returns true when consumed.
 static bool ProcessTabBarClick(const EditorInputEvent& event, float screenWidth,
                                std::vector<std::unique_ptr<Document>>& documents,
                                int& activeDocIndex, PlatformWindow& window,
-                               CanvasController& controller)
+                               CanvasController& controller, TabRenameState& tabRename)
 {
     const TabBarHit hit = HitTestTabBar(event.x, event.y,
                                         static_cast<int>(documents.size()), screenWidth);
@@ -796,10 +932,16 @@ static bool ProcessTabBarClick(const EditorInputEvent& event, float screenWidth,
         if (hit.tabIndex != activeDocIndex) {
             activeDocIndex = hit.tabIndex;
             controller = CanvasController();
+        } else {
+            // Clicking the already-active tab starts inline renaming.
+            tabRename.docIndex = hit.tabIndex;
+            tabRename.text =
+                documents[static_cast<std::size_t>(hit.tabIndex)]->displayName;
         }
         break;
     case TabBarHit::Kind::CloseTab:
-        if (!ConfirmDocumentClose(*documents[static_cast<std::size_t>(hit.tabIndex)], window)) {
+        if (!ConfirmDocumentClose(*documents[static_cast<std::size_t>(hit.tabIndex)],
+                                  window, true)) {
             break;
         }
         documents.erase(documents.begin() + hit.tabIndex);
@@ -853,6 +995,7 @@ int main(int argc, char** argv)
     NodeLayoutCache layoutCache;
     ContextMenu contextMenu;
     ClassEditorDialog classDialog;
+    TabRenameState tabRename;
     std::vector<EditorInputEvent> events;
 
     std::vector<std::unique_ptr<Document>> documents;
@@ -891,6 +1034,41 @@ int main(int argc, char** argv)
                 continue;
             }
 
+            // Inline tab renaming consumes keyboard input; any click
+            // commits it before normal handling continues.
+            if (tabRename.IsActive()) {
+                if (event.type == EditorInputType::KeyDown) {
+                    if (event.key == EditorKey::Enter) {
+                        CommitTabRename(tabRename, documents);
+                    } else if (event.key == EditorKey::Escape) {
+                        tabRename = TabRenameState();
+                    } else if (event.key == EditorKey::Backspace) {
+                        PopLastUTF8Character(tabRename.text);
+                    }
+                    continue;
+                }
+                if (event.type == EditorInputType::TextInput) {
+                    if (tabRename.text.size() < 60) {
+                        tabRename.text += event.text;
+                    }
+                    continue;
+                }
+                if (event.type == EditorInputType::MouseDown) {
+                    const int renamingIndex = tabRename.docIndex;
+                    CommitTabRename(tabRename, documents);
+                    // Clicking the same tab again just ends the rename.
+                    if (event.y < TAB_BAR_HEIGHT) {
+                        const TabBarHit hit =
+                            HitTestTabBar(event.x, event.y,
+                                          static_cast<int>(documents.size()), screenWidth);
+                        if (hit.kind == TabBarHit::Kind::Tab
+                            && hit.tabIndex == renamingIndex) {
+                            continue;
+                        }
+                    }
+                }
+            }
+
             // Inline comment renaming consumes keyboard input first.
             if (controller.IsEditingTitle()
                 && (event.type == EditorInputType::KeyDown
@@ -903,7 +1081,7 @@ int main(int argc, char** argv)
             if (event.type == EditorInputType::MouseDown && event.y < TAB_BAR_HEIGHT) {
                 if (event.button == EditorMouseButton::Left) {
                     ProcessTabBarClick(event, screenWidth, documents, activeDocIndex,
-                                       window, controller);
+                                       window, controller, tabRename);
                     // Blocking dialogs may have re-pumped the event list;
                     // stop iterating this frame's events.
                     break;
@@ -962,7 +1140,8 @@ int main(int argc, char** argv)
             tabNames.push_back(document->IsDirty() ? document->displayName + "*"
                                                    : document->displayName);
         }
-        DrawTabBar(vg, tabNames, activeDocIndex, screenWidth);
+        DrawTabBar(vg, tabNames, activeDocIndex, screenWidth,
+                   tabRename.docIndex, tabRename.text);
 
         DrawContextMenu(vg, contextMenu);
         DrawClassEditorDialog(vg, classDialog, screenWidth, screenHeight);

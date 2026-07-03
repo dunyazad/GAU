@@ -47,6 +47,12 @@ bool EditorSettings::LoadFromFile(const std::string& path)
                 } else if (entry.is_object()
                            && entry.contains("path") && entry["path"].is_string()) {
                     openFile.path = entry["path"].get<std::string>();
+                    if (entry.contains("untitled") && entry["untitled"].is_boolean()) {
+                        openFile.untitled = entry["untitled"].get<bool>();
+                    }
+                    if (entry.contains("displayName") && entry["displayName"].is_string()) {
+                        openFile.displayName = entry["displayName"].get<std::string>();
+                    }
                     if (entry.contains("panX") && entry["panX"].is_number()) {
                         openFile.panX = entry["panX"].get<float>();
                     }
@@ -80,6 +86,8 @@ bool EditorSettings::SaveToFile(const std::string& path) const
     for (const OpenFileEntry& openFile : openFiles) {
         json entry;
         entry["path"] = openFile.path;
+        entry["untitled"] = openFile.untitled;
+        entry["displayName"] = openFile.displayName;
         entry["panX"] = openFile.panX;
         entry["panY"] = openFile.panY;
         entry["zoom"] = openFile.zoom;
