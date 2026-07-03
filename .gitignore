@@ -1,0 +1,10 @@
+# Build output
+build/
+ios/build/
+
+# IDE
+.vs/
+*.user
+
+# Per-user editor state
+editor_settings.json

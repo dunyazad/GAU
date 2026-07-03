@@ -1,0 +1,36 @@
+#pragma once
+
+#include <memory>
+#include <vector>
+
+class NodeGraph;
+
+// Base class for undoable graph mutations. All user edits to the model
+// must be expressed as commands and executed through UndoStack.
+class GraphCommand
+{
+public:
+    virtual ~GraphCommand() = default;
+
+    // Applies the change. Returns false if it could not be applied;
+    // failed commands are not recorded.
+    virtual bool Execute(NodeGraph& graph) = 0;
+
+    // Reverts the change made by the last successful Execute.
+    virtual void Undo(NodeGraph& graph) = 0;
+};
+
+class UndoStack
+{
+public:
+    // Executes the command and records it. Clears the redo history.
+    bool Execute(std::unique_ptr<GraphCommand> command, NodeGraph& graph);
+
+    // Returns false when there is nothing to undo/redo.
+    bool Undo(NodeGraph& graph);
+    bool Redo(NodeGraph& graph);
+
+private:
+    std::vector<std::unique_ptr<GraphCommand>> undoList;
+    std::vector<std::unique_ptr<GraphCommand>> redoList;
+};

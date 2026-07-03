@@ -1,0 +1,22 @@
+{
+  "nodeClasses": [
+    {
+      "name": "Multiply",
+      "category": "Pure",
+      "pins": [
+        {"direction": "in", "type": "float", "name": "A"},
+        {"direction": "in", "type": "float", "name": "B"},
+        {"direction": "out", "type": "float", "name": "Result"}
+      ]
+    },
+    {
+      "name": "Delay",
+      "category": "Function",
+      "pins": [
+        {"direction": "in", "type": "exec", "name": ""},
+        {"direction": "in", "type": "float", "name": "Duration"},
+        {"direction": "out", "type": "exec", "name": "Completed"}
+      ]
+    }
+  ]
+}
