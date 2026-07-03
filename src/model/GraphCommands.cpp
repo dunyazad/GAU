@@ -53,6 +53,204 @@ void MoveNodesCommand::Undo(NodeGraph& graph)
     }
 }
 
+AddLinkCommand::AddLinkCommand(PinId pinA, PinId pinB)
+    : pinA(pinA)
+    , pinB(pinB)
+{
+}
+
+bool AddLinkCommand::Execute(NodeGraph& graph)
+{
+    if (!graph.CanConnect(pinA, pinB)) {
+        return false;
+    }
+    PinId outputPin = INVALID_ID;
+    PinId inputPin = INVALID_ID;
+    if (!graph.NormalizeConnection(pinA, pinB, outputPin, inputPin)) {
+        return false;
+    }
+
+    replacedFromPin = INVALID_ID;
+    replacedToPin = INVALID_ID;
+    // UE exclusivity: exec outputs hold one link, data inputs hold one.
+    const Pin* outputPinData = graph.FindPin(outputPin);
+    const Link* existing = (outputPinData != nullptr && outputPinData->type == PinType::Exec)
+                               ? graph.FindLinkFromOutput(outputPin)
+                               : graph.FindLinkToInput(inputPin);
+    if (existing != nullptr) {
+        replacedFromPin = existing->fromPinId;
+        replacedToPin = existing->toPinId;
+        graph.RemoveLink(existing->id);
+    }
+
+    createdLinkId = graph.AddLink(outputPin, inputPin);
+    return createdLinkId != INVALID_ID;
+}
+
+void AddLinkCommand::Undo(NodeGraph& graph)
+{
+    graph.RemoveLink(createdLinkId);
+    createdLinkId = INVALID_ID;
+    if (replacedFromPin != INVALID_ID && replacedToPin != INVALID_ID) {
+        graph.AddLink(replacedFromPin, replacedToPin);
+    }
+}
+
+RemoveLinksCommand::RemoveLinksCommand(std::vector<LinkId> linkIds)
+    : linkIds(std::move(linkIds))
+{
+}
+
+bool RemoveLinksCommand::Execute(NodeGraph& graph)
+{
+    removedEndpoints.clear();
+    for (LinkId linkId : linkIds) {
+        const Link* link = graph.FindLink(linkId);
+        if (link == nullptr) {
+            continue;
+        }
+        Endpoints endpoints;
+        endpoints.fromPinId = link->fromPinId;
+        endpoints.toPinId = link->toPinId;
+        removedEndpoints.push_back(endpoints);
+        graph.RemoveLink(linkId);
+    }
+    return !removedEndpoints.empty();
+}
+
+void RemoveLinksCommand::Undo(NodeGraph& graph)
+{
+    // Re-created links get new ids; refresh the list for redo.
+    linkIds.clear();
+    for (const Endpoints& endpoints : removedEndpoints) {
+        linkIds.push_back(graph.AddLink(endpoints.fromPinId, endpoints.toPinId));
+    }
+}
+
+SetNodePropertyCommand::SetNodePropertyCommand(NodeId nodeId, int propertyIndex,
+                                               PropertyValue newValue)
+    : nodeId(nodeId)
+    , propertyIndex(propertyIndex)
+    , newValue(std::move(newValue))
+{
+}
+
+bool SetNodePropertyCommand::Execute(NodeGraph& graph)
+{
+    Node* node = graph.FindNode(nodeId);
+    if (node == nullptr || propertyIndex < 0
+        || propertyIndex >= static_cast<int>(node->propertyValues.size())) {
+        return false;
+    }
+    oldValue = node->propertyValues[static_cast<std::size_t>(propertyIndex)];
+    node->propertyValues[static_cast<std::size_t>(propertyIndex)] = newValue;
+    return true;
+}
+
+void SetNodePropertyCommand::Undo(NodeGraph& graph)
+{
+    Node* node = graph.FindNode(nodeId);
+    if (node != nullptr && propertyIndex >= 0
+        && propertyIndex < static_cast<int>(node->propertyValues.size())) {
+        node->propertyValues[static_cast<std::size_t>(propertyIndex)] = oldValue;
+    }
+}
+
+AddLinkPointCommand::AddLinkPointCommand(LinkId linkId, int insertIndex, float x, float y)
+    : linkId(linkId)
+    , insertIndex(insertIndex)
+    , x(x)
+    , y(y)
+{
+}
+
+bool AddLinkPointCommand::Execute(NodeGraph& graph)
+{
+    Link* link = graph.FindLink(linkId);
+    if (link == nullptr || insertIndex < 0
+        || insertIndex > static_cast<int>(link->points.size())) {
+        return false;
+    }
+    LinkPoint point;
+    point.x = x;
+    point.y = y;
+    link->points.insert(link->points.begin() + insertIndex, point);
+    return true;
+}
+
+void AddLinkPointCommand::Undo(NodeGraph& graph)
+{
+    Link* link = graph.FindLink(linkId);
+    if (link != nullptr && insertIndex >= 0
+        && insertIndex < static_cast<int>(link->points.size())) {
+        link->points.erase(link->points.begin() + insertIndex);
+    }
+}
+
+MoveLinkPointCommand::MoveLinkPointCommand(LinkId linkId, int pointIndex,
+                                           float fromX, float fromY, float toX, float toY)
+    : linkId(linkId)
+    , pointIndex(pointIndex)
+    , fromX(fromX)
+    , fromY(fromY)
+    , toX(toX)
+    , toY(toY)
+{
+}
+
+bool MoveLinkPointCommand::Execute(NodeGraph& graph)
+{
+    Link* link = graph.FindLink(linkId);
+    if (link == nullptr || pointIndex < 0
+        || pointIndex >= static_cast<int>(link->points.size())) {
+        return false;
+    }
+    link->points[static_cast<std::size_t>(pointIndex)].x = toX;
+    link->points[static_cast<std::size_t>(pointIndex)].y = toY;
+    return true;
+}
+
+void MoveLinkPointCommand::Undo(NodeGraph& graph)
+{
+    Link* link = graph.FindLink(linkId);
+    if (link != nullptr && pointIndex >= 0
+        && pointIndex < static_cast<int>(link->points.size())) {
+        link->points[static_cast<std::size_t>(pointIndex)].x = fromX;
+        link->points[static_cast<std::size_t>(pointIndex)].y = fromY;
+    }
+}
+
+RemoveLinkPointCommand::RemoveLinkPointCommand(LinkId linkId, int pointIndex)
+    : linkId(linkId)
+    , pointIndex(pointIndex)
+{
+}
+
+bool RemoveLinkPointCommand::Execute(NodeGraph& graph)
+{
+    Link* link = graph.FindLink(linkId);
+    if (link == nullptr || pointIndex < 0
+        || pointIndex >= static_cast<int>(link->points.size())) {
+        return false;
+    }
+    removedX = link->points[static_cast<std::size_t>(pointIndex)].x;
+    removedY = link->points[static_cast<std::size_t>(pointIndex)].y;
+    link->points.erase(link->points.begin() + pointIndex);
+    return true;
+}
+
+void RemoveLinkPointCommand::Undo(NodeGraph& graph)
+{
+    Link* link = graph.FindLink(linkId);
+    if (link != nullptr && pointIndex >= 0
+        && pointIndex <= static_cast<int>(link->points.size())) {
+        LinkPoint point;
+        point.x = removedX;
+        point.y = removedY;
+        link->points.insert(link->points.begin() + pointIndex, point);
+    }
+}
+
 AddCommentCommand::AddCommentCommand(std::string title, float x, float y,
                                      float width, float height)
     : title(std::move(title))

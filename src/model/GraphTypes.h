@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,14 @@ using LinkId = std::uint32_t;
 using CommentId = std::uint32_t;
 
 constexpr std::uint32_t INVALID_ID = 0;
+
+// Link bezier tangent from the design spec; shared by rendering and
+// link hit testing so both trace the same curve.
+inline float LinkTangent(float dx)
+{
+    const float absDx = std::fabs(dx);
+    return (absDx < 200.0f) ? absDx * 0.5f + 50.0f : absDx * 0.5f;
+}
 
 // Comment (group) box geometry, canvas units at zoom 1.
 constexpr float COMMENT_TITLE_HEIGHT = 30.0f;

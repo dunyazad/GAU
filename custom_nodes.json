@@ -97,6 +97,18 @@
           "type": "float"
         }
       ]
+    },
+    {
+      "category": "Function",
+      "name": "Print",
+      "pins": [
+        {
+          "direction": "in",
+          "name": "",
+          "type": "exec"
+        }
+      ],
+      "properties": []
     }
   ]
 }

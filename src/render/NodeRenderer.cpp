@@ -1,5 +1,6 @@
 #include "NodeRenderer.h"
 #include "CategoryStyle.h"
+#include "PinStyle.h"
 
 #include "model/NodeGraph.h"
 
@@ -69,25 +70,6 @@ static float PropertyRowsTop(int pinRowCount)
     return NODE_HEADER_HEIGHT + NODE_BODY_PADDING
          + NODE_PIN_ROW_HEIGHT * static_cast<float>(pinRowCount)
          + NODE_PROPERTY_SECTION_GAP;
-}
-
-static NVGcolor PinColorForType(PinType type)
-{
-    switch (type) {
-    case PinType::Exec:
-        return nvgRGB(255, 255, 255);
-    case PinType::Bool:
-        return nvgRGB(140, 0, 0);
-    case PinType::Int:
-        return nvgRGB(30, 200, 160);
-    case PinType::Float:
-        return nvgRGB(160, 250, 60);
-    case PinType::String:
-        return nvgRGB(250, 0, 220);
-    case PinType::Object:
-        return nvgRGB(0, 160, 240);
-    }
-    return nvgRGB(255, 255, 255);
 }
 
 static float MeasureTextWidth(NVGcontext* vg, const char* fontFace, float fontSize, const char* text)

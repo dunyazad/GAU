@@ -43,6 +43,11 @@ struct EditorInputEvent
     float x = 0.0f;
     float y = 0.0f;
 
+    // Modifiers held during a mouse event (alt = break links,
+    // ctrl = insert reroute waypoint).
+    bool alt = false;
+    bool ctrl = false;
+
     // Vertical wheel movement in notches; positive means zoom in.
     float wheelDelta = 0.0f;
 

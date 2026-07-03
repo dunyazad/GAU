@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GraphTypes.h"
+#include "NodeClass.h"
 #include "UndoStack.h"
 
 #include <string>
@@ -46,6 +47,113 @@ public:
 
 private:
     std::vector<NodeMove> moves;
+};
+
+// Connects two pins (validated via NodeGraph::CanConnect). When the
+// input pin was already connected, the old link is replaced and
+// restored on undo.
+class AddLinkCommand : public GraphCommand
+{
+public:
+    AddLinkCommand(PinId pinA, PinId pinB);
+
+    bool Execute(NodeGraph& graph) override;
+    void Undo(NodeGraph& graph) override;
+
+private:
+    PinId pinA;
+    PinId pinB;
+    LinkId createdLinkId = INVALID_ID;
+    PinId replacedFromPin = INVALID_ID;
+    PinId replacedToPin = INVALID_ID;
+};
+
+// Removes one or more links (alt-click on a link or a pin) as a single
+// undoable step.
+class RemoveLinksCommand : public GraphCommand
+{
+public:
+    explicit RemoveLinksCommand(std::vector<LinkId> linkIds);
+
+    bool Execute(NodeGraph& graph) override;
+    void Undo(NodeGraph& graph) override;
+
+private:
+    struct Endpoints
+    {
+        PinId fromPinId = INVALID_ID;
+        PinId toPinId = INVALID_ID;
+    };
+
+    std::vector<LinkId> linkIds;
+    std::vector<Endpoints> removedEndpoints;
+};
+
+// Sets one property value of a node instance (property panel edit).
+class SetNodePropertyCommand : public GraphCommand
+{
+public:
+    SetNodePropertyCommand(NodeId nodeId, int propertyIndex, PropertyValue newValue);
+
+    bool Execute(NodeGraph& graph) override;
+    void Undo(NodeGraph& graph) override;
+
+private:
+    NodeId nodeId;
+    int propertyIndex;
+    PropertyValue newValue;
+    PropertyValue oldValue;
+};
+
+// Inserts a reroute waypoint into a link (ctrl-click on the curve).
+class AddLinkPointCommand : public GraphCommand
+{
+public:
+    AddLinkPointCommand(LinkId linkId, int insertIndex, float x, float y);
+
+    bool Execute(NodeGraph& graph) override;
+    void Undo(NodeGraph& graph) override;
+
+private:
+    LinkId linkId;
+    int insertIndex;
+    float x;
+    float y;
+};
+
+// Records a completed drag of a reroute waypoint.
+class MoveLinkPointCommand : public GraphCommand
+{
+public:
+    MoveLinkPointCommand(LinkId linkId, int pointIndex,
+                         float fromX, float fromY, float toX, float toY);
+
+    bool Execute(NodeGraph& graph) override;
+    void Undo(NodeGraph& graph) override;
+
+private:
+    LinkId linkId;
+    int pointIndex;
+    float fromX;
+    float fromY;
+    float toX;
+    float toY;
+};
+
+// Removes a reroute waypoint (alt-click on it).
+class RemoveLinkPointCommand : public GraphCommand
+{
+public:
+    RemoveLinkPointCommand(LinkId linkId, int pointIndex);
+
+    bool Execute(NodeGraph& graph) override;
+    void Undo(NodeGraph& graph) override;
+
+private:
+    LinkId linkId;
+    int pointIndex;
+    float removedX = 0.0f;
+    float removedY = 0.0f;
 };
 
 // Creates a comment (group) box.

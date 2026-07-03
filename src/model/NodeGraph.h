@@ -45,25 +45,70 @@ struct Node
     std::vector<PropertyValue> propertyValues;
 };
 
-// Container for nodes/pins (links arrive in M4). Mutations that belong to
-// user edits must go through UndoStack commands, never called directly
-// from interaction code.
+// Reroute waypoint on a link, canvas coordinates.
+struct LinkPoint
+{
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+// A connection between an output pin and an input pin (normalized:
+// fromPinId is always the output side). The curve routes through the
+// optional waypoints in order.
+struct Link
+{
+    LinkId id = INVALID_ID;
+    PinId fromPinId = INVALID_ID;
+    PinId toPinId = INVALID_ID;
+    std::vector<LinkPoint> points;
+};
+
+// Container for nodes/pins/links. Mutations that belong to user edits
+// must go through UndoStack commands, never called directly from
+// interaction code.
 class NodeGraph
 {
 public:
     // Instantiates a node of the given class at a canvas position,
     // creating its pins from the class pin definitions.
     NodeId AddNode(const NodeClass& nodeClass, float x, float y);
+    // Also removes links attached to the node's pins.
     bool RemoveNode(NodeId nodeId);
 
     // Re-creates pins and property values of all nodes of a class after
-    // its definition changed (class editor). Pin ids are re-assigned;
-    // links to those pins must be dropped by the caller (none before M4).
+    // its definition changed (class editor). Pin ids are re-assigned and
+    // links attached to the old pins are removed.
     void RebuildNodesOfClass(const NodeClass& nodeClass);
 
     Node* FindNode(NodeId nodeId);
     const Node* FindNode(NodeId nodeId) const;
     const std::vector<Node>& GetNodes() const { return nodes; }
+
+    const Pin* FindPin(PinId pinId) const;
+    const Node* FindPinOwner(PinId pinId) const;
+
+    // Single source of truth for connection rules: no same-node links,
+    // directions must be opposite, types must match (which also forbids
+    // exec-data mixing) and exec links must not create a cycle. An
+    // occupied input pin is allowed (creation replaces the old link).
+    bool CanConnect(PinId pinA, PinId pinB) const;
+
+    // Orders an arbitrary pin pair into (output, input). Returns false
+    // when the pins do not form an opposite-direction pair.
+    bool NormalizeConnection(PinId pinA, PinId pinB,
+                             PinId& outOutputPin, PinId& outInputPin) const;
+
+    // Creates a link (callers validate with CanConnect first).
+    LinkId AddLink(PinId outputPinId, PinId inputPinId);
+    bool RemoveLink(LinkId linkId);
+    Link* FindLink(LinkId linkId);
+    const Link* FindLink(LinkId linkId) const;
+    // Exclusive sides (UE rules): a data input and an exec output hold
+    // at most one link; data outputs and exec inputs fan out freely.
+    const Link* FindLinkToInput(PinId inputPinId) const;
+    const Link* FindLinkFromOutput(PinId outputPinId) const;
+    bool IsPinConnected(PinId pinId) const;
+    const std::vector<Link>& GetLinks() const { return links; }
 
     CommentId AddComment(const std::string& title, float x, float y, float width, float height);
     bool RemoveComment(CommentId commentId);
@@ -73,10 +118,16 @@ public:
 
 private:
     void AddPin(Node& node, const PinDef& pinDef);
+    void RemoveLinksTouchingNode(const Node& node);
+    // True when execution starting at fromNode can reach toNode by
+    // following exec links.
+    bool ExecPathExists(NodeId fromNodeId, NodeId toNodeId) const;
 
     std::vector<Node> nodes;
     std::vector<CommentNode> comments;
+    std::vector<Link> links;
     std::uint32_t nextNodeId = 1;
     std::uint32_t nextPinId = 1;
     std::uint32_t nextCommentId = 1;
+    std::uint32_t nextLinkId = 1;
 };

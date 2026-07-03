@@ -159,6 +159,51 @@ bool SaveGraphToFile(const NodeGraph& graph, const std::string& path, std::strin
     }
     root["nodes"] = nodeArray;
 
+    // Links reference nodes by index in the array above and pins by
+    // their position within the node's output/input lists, which is
+    // stable across sessions (ids are not).
+    json linkArray = json::array();
+    for (const Link& link : graph.GetLinks()) {
+        int fromNodeIndex = -1;
+        int fromPinIndex = -1;
+        int toNodeIndex = -1;
+        int toPinIndex = -1;
+        const std::vector<Node>& nodes = graph.GetNodes();
+        for (int nodeIndex = 0; nodeIndex < static_cast<int>(nodes.size()); ++nodeIndex) {
+            const Node& node = nodes[static_cast<std::size_t>(nodeIndex)];
+            for (int pinIndex = 0; pinIndex < static_cast<int>(node.outputs.size()); ++pinIndex) {
+                if (node.outputs[static_cast<std::size_t>(pinIndex)].id == link.fromPinId) {
+                    fromNodeIndex = nodeIndex;
+                    fromPinIndex = pinIndex;
+                }
+            }
+            for (int pinIndex = 0; pinIndex < static_cast<int>(node.inputs.size()); ++pinIndex) {
+                if (node.inputs[static_cast<std::size_t>(pinIndex)].id == link.toPinId) {
+                    toNodeIndex = nodeIndex;
+                    toPinIndex = pinIndex;
+                }
+            }
+        }
+        if (fromNodeIndex < 0 || toNodeIndex < 0) {
+            continue;
+        }
+        json entry;
+        entry["fromNode"] = fromNodeIndex;
+        entry["fromPin"] = fromPinIndex;
+        entry["toNode"] = toNodeIndex;
+        entry["toPin"] = toPinIndex;
+        json pointArray = json::array();
+        for (const LinkPoint& point : link.points) {
+            json pointJson;
+            pointJson["x"] = point.x;
+            pointJson["y"] = point.y;
+            pointArray.push_back(pointJson);
+        }
+        entry["points"] = pointArray;
+        linkArray.push_back(entry);
+    }
+    root["links"] = linkArray;
+
     json commentArray = json::array();
     for (const CommentNode& comment : graph.GetComments()) {
         json entry;
@@ -184,18 +229,20 @@ bool SaveGraphToFile(const NodeGraph& graph, const std::string& path, std::strin
     return true;
 }
 
-static void LoadNodeEntry(NodeGraph& graph, const json& entry,
-                          std::vector<std::string>& outErrors)
+// Returns the created node id, or INVALID_ID when the entry was skipped
+// (so link indices can be mapped correctly).
+static NodeId LoadNodeEntry(NodeGraph& graph, const json& entry,
+                            std::vector<std::string>& outErrors)
 {
     if (!entry.is_object() || !entry.contains("class") || !entry["class"].is_string()) {
         outErrors.push_back("node entry has missing or invalid 'class'");
-        return;
+        return INVALID_ID;
     }
     const std::string className = entry["class"].get<std::string>();
     const NodeClass* nodeClass = NodeClass::FindByName(className.c_str());
     if (nodeClass == nullptr) {
         outErrors.push_back("unknown node class: " + className);
-        return;
+        return INVALID_ID;
     }
 
     const float x = (entry.contains("x") && entry["x"].is_number())
@@ -206,11 +253,11 @@ static void LoadNodeEntry(NodeGraph& graph, const json& entry,
     const NodeId nodeId = graph.AddNode(*nodeClass, x, y);
     Node* node = graph.FindNode(nodeId);
     if (node == nullptr) {
-        return;
+        return INVALID_ID;
     }
 
     if (!entry.contains("properties") || !entry["properties"].is_array()) {
-        return;
+        return nodeId;
     }
     const json& propertyArray = entry["properties"];
     const std::vector<PropertyDef>& defs = nodeClass->GetProperties();
@@ -222,6 +269,75 @@ static void LoadNodeEntry(NodeGraph& graph, const json& entry,
         } else {
             outErrors.push_back("node '" + className + "': property '" + defs[i].name
                                 + "' has a mismatched value; default kept");
+        }
+    }
+    return nodeId;
+}
+
+static void LoadLinkEntry(NodeGraph& graph, const json& entry,
+                          const std::vector<NodeId>& loadedNodeIds,
+                          std::vector<std::string>& outErrors)
+{
+    if (!entry.is_object()
+        || !entry.contains("fromNode") || !entry["fromNode"].is_number_integer()
+        || !entry.contains("fromPin") || !entry["fromPin"].is_number_integer()
+        || !entry.contains("toNode") || !entry["toNode"].is_number_integer()
+        || !entry.contains("toPin") || !entry["toPin"].is_number_integer()) {
+        outErrors.push_back("link entry is malformed");
+        return;
+    }
+    const int fromNodeIndex = entry["fromNode"].get<int>();
+    const int fromPinIndex = entry["fromPin"].get<int>();
+    const int toNodeIndex = entry["toNode"].get<int>();
+    const int toPinIndex = entry["toPin"].get<int>();
+
+    if (fromNodeIndex < 0 || fromNodeIndex >= static_cast<int>(loadedNodeIds.size())
+        || toNodeIndex < 0 || toNodeIndex >= static_cast<int>(loadedNodeIds.size())) {
+        outErrors.push_back("link references a node out of range");
+        return;
+    }
+    const NodeId fromNodeId = loadedNodeIds[static_cast<std::size_t>(fromNodeIndex)];
+    const NodeId toNodeId = loadedNodeIds[static_cast<std::size_t>(toNodeIndex)];
+    if (fromNodeId == INVALID_ID || toNodeId == INVALID_ID) {
+        outErrors.push_back("link references a skipped node");
+        return;
+    }
+
+    const Node* fromNode = graph.FindNode(fromNodeId);
+    const Node* toNode = graph.FindNode(toNodeId);
+    if (fromNode == nullptr || toNode == nullptr
+        || fromPinIndex < 0 || fromPinIndex >= static_cast<int>(fromNode->outputs.size())
+        || toPinIndex < 0 || toPinIndex >= static_cast<int>(toNode->inputs.size())) {
+        outErrors.push_back("link references a pin out of range");
+        return;
+    }
+
+    const Pin& outputPinData = fromNode->outputs[static_cast<std::size_t>(fromPinIndex)];
+    const PinId outputPin = outputPinData.id;
+    const PinId inputPin = toNode->inputs[static_cast<std::size_t>(toPinIndex)].id;
+    const bool exclusiveSideOccupied =
+        (outputPinData.type == PinType::Exec)
+            ? graph.FindLinkFromOutput(outputPin) != nullptr
+            : graph.FindLinkToInput(inputPin) != nullptr;
+    if (!graph.CanConnect(outputPin, inputPin) || exclusiveSideOccupied) {
+        outErrors.push_back("link skipped: connection is no longer valid");
+        return;
+    }
+    const LinkId linkId = graph.AddLink(outputPin, inputPin);
+
+    if (entry.contains("points") && entry["points"].is_array()) {
+        Link* link = graph.FindLink(linkId);
+        if (link != nullptr) {
+            for (const json& pointJson : entry["points"]) {
+                if (pointJson.is_object()
+                    && pointJson.contains("x") && pointJson["x"].is_number()
+                    && pointJson.contains("y") && pointJson["y"].is_number()) {
+                    LinkPoint point;
+                    point.x = pointJson["x"].get<float>();
+                    point.y = pointJson["y"].get<float>();
+                    link->points.push_back(point);
+                }
+            }
         }
     }
 }
@@ -243,9 +359,16 @@ bool LoadGraphFromFile(NodeGraph& graph, const std::string& path,
         return false;
     }
 
+    std::vector<NodeId> loadedNodeIds;
     if (root.contains("nodes") && root["nodes"].is_array()) {
         for (const json& entry : root["nodes"]) {
-            LoadNodeEntry(graph, entry, outErrors);
+            loadedNodeIds.push_back(LoadNodeEntry(graph, entry, outErrors));
+        }
+    }
+
+    if (root.contains("links") && root["links"].is_array()) {
+        for (const json& entry : root["links"]) {
+            LoadLinkEntry(graph, entry, loadedNodeIds, outErrors);
         }
     }
 

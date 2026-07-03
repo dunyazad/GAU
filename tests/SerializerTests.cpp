@@ -44,6 +44,24 @@ static void TestRoundTrip()
 
     source.AddComment("Group A", -10.0f, -10.0f, 500.0f, 400.0f);
 
+    // Link: Branch "True" exec output -> Test Stat exec input.
+    const Node* branchNode = source.FindNode(branchId);
+    const Node* statSource = source.FindNode(statId);
+    Check(branchNode != nullptr && statSource != nullptr, "nodes resolvable");
+    if (branchNode != nullptr && statSource != nullptr) {
+        const PinId truePin = branchNode->outputs[0].id;
+        const PinId falsePin = branchNode->outputs[1].id;
+        const PinId execIn = statSource->inputs[0].id;
+        Check(source.CanConnect(truePin, execIn), "CanConnect exec pair");
+        Check(source.AddLink(truePin, execIn) != INVALID_ID, "add link");
+        // Exec inputs accept multiple incoming links (UE rule).
+        Check(source.CanConnect(falsePin, execIn), "exec input fan-in allowed");
+        Check(source.AddLink(falsePin, execIn) != INVALID_ID, "add second link");
+        Check(!source.CanConnect(truePin, truePin), "reject same pin");
+        Check(!source.CanConnect(branchNode->inputs[0].id, branchNode->outputs[0].id),
+              "reject same node");
+    }
+
     const std::string path = "serializer_test_graph.json";
     std::string saveError;
     Check(SaveGraphToFile(source, path, saveError), "save");
@@ -77,6 +95,19 @@ static void TestRoundTrip()
     const CommentNode& comment = loaded.GetComments().front();
     Check(comment.title == "Group A", "comment title");
     Check(comment.width == 500.0f && comment.height == 400.0f, "comment size");
+
+    Check(loaded.GetLinks().size() == 2, "link count");
+    if (!loaded.GetLinks().empty()) {
+        const Link& link = loaded.GetLinks().front();
+        const Pin* fromPin = loaded.FindPin(link.fromPinId);
+        const Pin* toPin = loaded.FindPin(link.toPinId);
+        Check(fromPin != nullptr && fromPin->direction == PinDirection::Output
+                  && fromPin->type == PinType::Exec && fromPin->name == "True",
+              "link from pin restored");
+        Check(toPin != nullptr && toPin->direction == PinDirection::Input
+                  && toPin->type == PinType::Exec,
+              "link to pin restored");
+    }
 }
 
 int main()

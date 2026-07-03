@@ -53,6 +53,18 @@ public:
         return nullptr;
     }
 
+    const PinLayout* FindPin(PinId pinId) const
+    {
+        for (const NodeLayout& layout : layouts) {
+            for (const PinLayout& pin : layout.pins) {
+                if (pin.pinId == pinId) {
+                    return &pin;
+                }
+            }
+        }
+        return nullptr;
+    }
+
     const std::vector<NodeLayout>& GetAll() const
     {
         return layouts;

@@ -31,7 +31,9 @@ add_executable(gau
     src/render/SelectionRenderer.cpp
     src/render/CommentRenderer.cpp
     src/render/TabBarRenderer.cpp
+    src/render/PropertyPanelRenderer.cpp
     src/render/NodeRenderer.cpp
+    src/render/LinkRenderer.cpp
     src/render/ContextMenuRenderer.cpp
     src/render/ClassEditorDialogRenderer.cpp
     src/model/NodeGraph.cpp
@@ -42,7 +44,9 @@ add_executable(gau
     src/model/UndoStack.cpp
     src/model/GraphCommands.cpp
     src/model/GraphSerializer.cpp
+    src/model/PropertyText.cpp
     src/interaction/ContextMenu.cpp
+    src/interaction/PropertyPanel.cpp
     src/interaction/TabBar.cpp
     src/interaction/ClassEditorDialog.cpp
     src/interaction/HitTest.cpp

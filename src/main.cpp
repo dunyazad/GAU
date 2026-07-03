@@ -5,6 +5,7 @@
 #include "render/GridRenderer.h"
 #include "render/SelectionRenderer.h"
 #include "render/CommentRenderer.h"
+#include "render/LinkRenderer.h"
 #include "render/TabBarRenderer.h"
 #include "render/NodeRenderer.h"
 #include "render/NodeLayoutCache.h"
@@ -19,7 +20,10 @@
 #include "interaction/ContextMenu.h"
 #include "interaction/ClassEditorDialog.h"
 #include "interaction/HitTest.h"
+#include "interaction/PropertyPanel.h"
 #include "interaction/TabBar.h"
+#include "model/PropertyText.h"
+#include "render/PropertyPanelRenderer.h"
 #include "render/ClassEditorDialogRenderer.h"
 
 #include <nanovg.h>
@@ -72,6 +76,18 @@ struct CanvasController
     float bandStartCanvasY = 0.0f;
     float bandEndCanvasX = 0.0f;
     float bandEndCanvasY = 0.0f;
+
+    // Link dragging from a pin.
+    PinId draggingLinkPinId = INVALID_ID;
+    float linkDragCanvasX = 0.0f;
+    float linkDragCanvasY = 0.0f;
+
+    // Reroute waypoint dragging.
+    LinkId draggingPointLinkId = INVALID_ID;
+    int draggingPointIndex = -1;
+    float pointFromX = 0.0f;
+    float pointFromY = 0.0f;
+    bool pointMoved = false;
 
     // Comment box interactions.
     CommentId draggingCommentId = INVALID_ID;
@@ -241,9 +257,89 @@ struct CanvasController
                 lastMouseY = event.y;
             } else if (event.button == EditorMouseButton::Left) {
                 const Vec2 canvasPos = canvas.ScreenToCanvas(Vec2{event.x, event.y});
-                const NodeId hitNodeId = HitTestNode(layoutCache, canvasPos.x, canvasPos.y);
                 lastMouseX = event.x;
                 lastMouseY = event.y;
+                // Alt-click breaks links: on a pin all of its links, on
+                // a waypoint that waypoint, on a link that one link.
+                if (event.alt) {
+                    const PinId altPinId = HitTestPin(layoutCache, canvasPos.x, canvasPos.y);
+                    if (altPinId != INVALID_ID) {
+                        std::vector<LinkId> pinLinks;
+                        for (const Link& link : graph.GetLinks()) {
+                            if (link.fromPinId == altPinId || link.toPinId == altPinId) {
+                                pinLinks.push_back(link.id);
+                            }
+                        }
+                        if (!pinLinks.empty()) {
+                            undoStack.Execute(
+                                std::make_unique<RemoveLinksCommand>(std::move(pinLinks)),
+                                graph);
+                        }
+                        break;
+                    }
+                    const LinkPointHit pointHit =
+                        HitTestLinkPoint(graph, canvasPos.x, canvasPos.y);
+                    if (pointHit.linkId != INVALID_ID) {
+                        undoStack.Execute(
+                            std::make_unique<RemoveLinkPointCommand>(pointHit.linkId,
+                                                                     pointHit.pointIndex),
+                            graph);
+                        break;
+                    }
+                    const LinkId altLinkId =
+                        HitTestLink(graph, layoutCache, canvasPos.x, canvasPos.y);
+                    if (altLinkId != INVALID_ID) {
+                        undoStack.Execute(
+                            std::make_unique<RemoveLinksCommand>(
+                                std::vector<LinkId>{altLinkId}),
+                            graph);
+                        break;
+                    }
+                    break;
+                }
+
+                // Hit priority: pin > waypoint > node > link > comment.
+                const PinId hitPinId = HitTestPin(layoutCache, canvasPos.x, canvasPos.y);
+                if (hitPinId != INVALID_ID) {
+                    draggingLinkPinId = hitPinId;
+                    linkDragCanvasX = canvasPos.x;
+                    linkDragCanvasY = canvasPos.y;
+                    break;
+                }
+                const LinkPointHit pointHit = HitTestLinkPoint(graph, canvasPos.x, canvasPos.y);
+                if (pointHit.linkId != INVALID_ID) {
+                    const Link* link = graph.FindLink(pointHit.linkId);
+                    if (link != nullptr) {
+                        draggingPointLinkId = pointHit.linkId;
+                        draggingPointIndex = pointHit.pointIndex;
+                        pointFromX = link->points[static_cast<std::size_t>(pointHit.pointIndex)].x;
+                        pointFromY = link->points[static_cast<std::size_t>(pointHit.pointIndex)].y;
+                        pointMoved = false;
+                    }
+                    break;
+                }
+                const NodeId hitNodeId = HitTestNode(layoutCache, canvasPos.x, canvasPos.y);
+                if (hitNodeId == INVALID_ID && event.ctrl) {
+                    // Ctrl-click on a link inserts a reroute waypoint
+                    // and starts dragging it right away.
+                    int segmentIndex = 0;
+                    const LinkId ctrlLinkId = HitTestLink(graph, layoutCache,
+                                                          canvasPos.x, canvasPos.y,
+                                                          &segmentIndex);
+                    if (ctrlLinkId != INVALID_ID) {
+                        if (undoStack.Execute(
+                                std::make_unique<AddLinkPointCommand>(ctrlLinkId, segmentIndex,
+                                                                      canvasPos.x, canvasPos.y),
+                                graph)) {
+                            draggingPointLinkId = ctrlLinkId;
+                            draggingPointIndex = segmentIndex;
+                            pointFromX = canvasPos.x;
+                            pointFromY = canvasPos.y;
+                            pointMoved = false;
+                        }
+                        break;
+                    }
+                }
                 if (hitNodeId != INVALID_ID) {
                     // Clicking an unselected node makes it the selection;
                     // dragging moves the whole selection.
@@ -289,6 +385,35 @@ struct CanvasController
                     return true;
                 }
             } else if (event.button == EditorMouseButton::Left) {
+                if (draggingLinkPinId != INVALID_ID) {
+                    const Vec2 canvasPos = canvas.ScreenToCanvas(Vec2{event.x, event.y});
+                    const PinId targetPinId =
+                        HitTestPin(layoutCache, canvasPos.x, canvasPos.y);
+                    if (targetPinId != INVALID_ID
+                        && graph.CanConnect(draggingLinkPinId, targetPinId)) {
+                        undoStack.Execute(
+                            std::make_unique<AddLinkCommand>(draggingLinkPinId, targetPinId),
+                            graph);
+                    }
+                    draggingLinkPinId = INVALID_ID;
+                }
+                if (draggingPointLinkId != INVALID_ID) {
+                    if (pointMoved) {
+                        const Link* link = graph.FindLink(draggingPointLinkId);
+                        if (link != nullptr && draggingPointIndex >= 0
+                            && draggingPointIndex < static_cast<int>(link->points.size())) {
+                            const LinkPoint& point =
+                                link->points[static_cast<std::size_t>(draggingPointIndex)];
+                            undoStack.Execute(
+                                std::make_unique<MoveLinkPointCommand>(
+                                    draggingPointLinkId, draggingPointIndex,
+                                    pointFromX, pointFromY, point.x, point.y),
+                                graph);
+                        }
+                    }
+                    draggingPointLinkId = INVALID_ID;
+                    draggingPointIndex = -1;
+                }
                 if (draggingNodes) {
                     EndNodeDrag(graph, undoStack);
                 }
@@ -308,6 +433,19 @@ struct CanvasController
                 const float dy = event.y - lastMouseY;
                 canvas.PanByScreenDelta(dx, dy);
                 dragDistance += std::fabs(dx) + std::fabs(dy);
+            } else if (draggingLinkPinId != INVALID_ID) {
+                const Vec2 canvasPos = canvas.ScreenToCanvas(Vec2{event.x, event.y});
+                linkDragCanvasX = canvasPos.x;
+                linkDragCanvasY = canvasPos.y;
+            } else if (draggingPointLinkId != INVALID_ID) {
+                Link* link = graph.FindLink(draggingPointLinkId);
+                if (link != nullptr && draggingPointIndex >= 0
+                    && draggingPointIndex < static_cast<int>(link->points.size())) {
+                    const Vec2 canvasPos = canvas.ScreenToCanvas(Vec2{event.x, event.y});
+                    link->points[static_cast<std::size_t>(draggingPointIndex)].x = canvasPos.x;
+                    link->points[static_cast<std::size_t>(draggingPointIndex)].y = canvasPos.y;
+                    pointMoved = true;
+                }
             } else if (draggingNodes) {
                 // Live move of the whole selection; the undoable command
                 // is pushed on release.
@@ -524,7 +662,8 @@ static void RenderComments(NVGcontext* vg, const Canvas& canvas, const NodeGraph
 
 static void RenderNodes(NVGcontext* vg, const Canvas& canvas,
                         const NodeGraph& graph, NodeLayoutCache& layoutCache,
-                        const std::vector<NodeId>& selectedNodes)
+                        const std::vector<NodeId>& selectedNodes,
+                        PinId draggingLinkPinId, float linkDragCanvasX, float linkDragCanvasY)
 {
     layoutCache.Clear();
 
@@ -532,10 +671,27 @@ static void RenderNodes(NVGcontext* vg, const Canvas& canvas,
     nvgScale(vg, canvas.GetZoom(), canvas.GetZoom());
     nvgTranslate(vg, -canvas.GetPanX(), -canvas.GetPanY());
 
+    // First pass: layouts (with pin connection state) so links can be
+    // drawn beneath the node bodies.
     for (const Node& node : graph.GetNodes()) {
         NodeLayout layout = ComputeNodeLayout(vg, node);
-        DrawNode(vg, node, layout, ContainsNodeId(selectedNodes, node.id));
+        for (PinLayout& pinLayout : layout.pins) {
+            pinLayout.connected = graph.IsPinConnected(pinLayout.pinId);
+        }
         layoutCache.Add(layout);
+    }
+
+    DrawLinks(vg, graph, layoutCache);
+
+    for (const Node& node : graph.GetNodes()) {
+        const NodeLayout* layout = layoutCache.Find(node.id);
+        if (layout != nullptr) {
+            DrawNode(vg, node, *layout, ContainsNodeId(selectedNodes, node.id));
+        }
+    }
+
+    if (draggingLinkPinId != INVALID_ID) {
+        DrawDraggingLink(vg, layoutCache, draggingLinkPinId, linkDragCanvasX, linkDragCanvasY);
     }
 
     nvgRestore(vg);
@@ -761,6 +917,29 @@ static void CommitTabRename(TabRenameState& rename,
     doc.filePath = newPath.string();
     doc.displayName = newPath.filename().string();
     std::printf("renamed: %s\n", doc.filePath.c_str());
+}
+
+// Parses a property-panel edit and applies it as an undoable command.
+static void ApplyPropertyPanelAction(const PropertyPanelAction& action, const Node& node,
+                                     NodeGraph& graph, UndoStack& undoStack)
+{
+    if (action.type != PropertyPanelAction::Type::SetProperty || action.propertyIndex < 0
+        || action.propertyIndex >= static_cast<int>(node.nodeClass->GetProperties().size())) {
+        return;
+    }
+    const PropertyDef& def =
+        node.nodeClass->GetProperties()[static_cast<std::size_t>(action.propertyIndex)];
+
+    PropertyValue newValue;
+    std::string error;
+    if (!ParsePropertyValueText(def, action.text, newValue, error)) {
+        std::printf("property '%s': %s\n", def.name.c_str(), error.c_str());
+        return;
+    }
+    undoStack.Execute(
+        std::make_unique<SetNodePropertyCommand>(node.id, action.propertyIndex,
+                                                 std::move(newValue)),
+        graph);
 }
 
 // Prompts for every dirty document before quitting; documents stay open
@@ -995,6 +1174,7 @@ int main(int argc, char** argv)
     NodeLayoutCache layoutCache;
     ContextMenu contextMenu;
     ClassEditorDialog classDialog;
+    PropertyPanel propertyPanel;
     TabRenameState tabRename;
     std::vector<EditorInputEvent> events;
 
@@ -1077,6 +1257,24 @@ int main(int argc, char** argv)
                 continue;
             }
 
+            // Property panel of the selected node (dockable).
+            {
+                const Node* selectedNode = controller.selectedNodes.empty()
+                                               ? nullptr
+                                               : doc.graph.FindNode(controller.selectedNodes.back());
+                propertyPanel.SetTarget(selectedNode);
+                if (selectedNode != nullptr) {
+                    PropertyPanelAction panelAction;
+                    const bool consumed = propertyPanel.HandleEvent(
+                        event, selectedNode, screenWidth, screenHeight, panelAction);
+                    ApplyPropertyPanelAction(panelAction, *selectedNode, doc.graph,
+                                             doc.undoStack);
+                    if (consumed) {
+                        continue;
+                    }
+                }
+            }
+
             // Clicks in the tab bar never reach the canvas.
             if (event.type == EditorInputType::MouseDown && event.y < TAB_BAR_HEIGHT) {
                 if (event.button == EditorMouseButton::Left) {
@@ -1128,7 +1326,9 @@ int main(int argc, char** argv)
         DrawGrid(vg, doc.canvas, screenWidth, screenHeight);
         RenderComments(vg, doc.canvas, doc.graph, controller.editingCommentId,
                        controller.titleEditText);
-        RenderNodes(vg, doc.canvas, doc.graph, layoutCache, controller.selectedNodes);
+        RenderNodes(vg, doc.canvas, doc.graph, layoutCache, controller.selectedNodes,
+                    controller.draggingLinkPinId,
+                    controller.linkDragCanvasX, controller.linkDragCanvasY);
         if (controller.rubberBanding) {
             DrawRubberBand(vg, doc.canvas,
                            controller.bandStartCanvasX, controller.bandStartCanvasY,
@@ -1142,6 +1342,14 @@ int main(int argc, char** argv)
         }
         DrawTabBar(vg, tabNames, activeDocIndex, screenWidth,
                    tabRename.docIndex, tabRename.text);
+
+        const Node* panelNode = controller.selectedNodes.empty()
+                                    ? nullptr
+                                    : doc.graph.FindNode(controller.selectedNodes.back());
+        propertyPanel.SetTarget(panelNode);
+        if (panelNode != nullptr) {
+            DrawPropertyPanel(vg, propertyPanel, *panelNode, screenWidth);
+        }
 
         DrawContextMenu(vg, contextMenu);
         DrawClassEditorDialog(vg, classDialog, screenWidth, screenHeight);
