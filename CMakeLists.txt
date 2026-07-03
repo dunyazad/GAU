@@ -44,6 +44,7 @@ add_executable(gau
     src/model/BuiltinNodeClasses.cpp
     src/model/NodeClassLoader.cpp
     src/model/EditorSettings.cpp
+    src/model/Guid.cpp
     src/model/UndoStack.cpp
     src/model/GraphCommands.cpp
     src/model/GraphClipboard.cpp
@@ -85,6 +86,7 @@ add_test(NAME canvas_tests COMMAND canvas_tests)
 add_executable(serializer_tests
     tests/SerializerTests.cpp
     src/model/NodeGraph.cpp
+    src/model/Guid.cpp
     src/model/NodeClass.cpp
     src/model/BuiltinNodeClasses.cpp
     src/model/GraphSerializer.cpp
@@ -98,6 +100,7 @@ add_test(NAME serializer_tests COMMAND serializer_tests)
 add_executable(exec_tests
     tests/ExecTests.cpp
     src/model/NodeGraph.cpp
+    src/model/Guid.cpp
     src/model/NodeClass.cpp
     src/model/BuiltinNodeClasses.cpp
     src/exec/ExecEngine.cpp

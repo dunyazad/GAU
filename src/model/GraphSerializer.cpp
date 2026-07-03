@@ -139,6 +139,7 @@ bool SaveGraphToFile(const NodeGraph& graph, const std::string& path, std::strin
     json nodeArray = json::array();
     for (const Node& node : graph.GetNodes()) {
         json entry;
+        entry["id"] = node.guid;
         entry["class"] = node.nodeClass->GetName();
         entry["x"] = node.x;
         entry["y"] = node.y;
@@ -159,38 +160,36 @@ bool SaveGraphToFile(const NodeGraph& graph, const std::string& path, std::strin
     }
     root["nodes"] = nodeArray;
 
-    // Links reference nodes by index in the array above and pins by
-    // their position within the node's output/input lists, which is
-    // stable across sessions (ids are not).
+    // Links reference nodes by guid and pins by their position within
+    // the node's output/input lists (guids stay stable across sessions
+    // and merges, unlike array indices).
     json linkArray = json::array();
     for (const Link& link : graph.GetLinks()) {
-        int fromNodeIndex = -1;
+        std::string fromGuid;
         int fromPinIndex = -1;
-        int toNodeIndex = -1;
+        std::string toGuid;
         int toPinIndex = -1;
-        const std::vector<Node>& nodes = graph.GetNodes();
-        for (int nodeIndex = 0; nodeIndex < static_cast<int>(nodes.size()); ++nodeIndex) {
-            const Node& node = nodes[static_cast<std::size_t>(nodeIndex)];
+        for (const Node& node : graph.GetNodes()) {
             for (int pinIndex = 0; pinIndex < static_cast<int>(node.outputs.size()); ++pinIndex) {
                 if (node.outputs[static_cast<std::size_t>(pinIndex)].id == link.fromPinId) {
-                    fromNodeIndex = nodeIndex;
+                    fromGuid = node.guid;
                     fromPinIndex = pinIndex;
                 }
             }
             for (int pinIndex = 0; pinIndex < static_cast<int>(node.inputs.size()); ++pinIndex) {
                 if (node.inputs[static_cast<std::size_t>(pinIndex)].id == link.toPinId) {
-                    toNodeIndex = nodeIndex;
+                    toGuid = node.guid;
                     toPinIndex = pinIndex;
                 }
             }
         }
-        if (fromNodeIndex < 0 || toNodeIndex < 0) {
+        if (fromGuid.empty() || toGuid.empty()) {
             continue;
         }
         json entry;
-        entry["fromNode"] = fromNodeIndex;
+        entry["fromId"] = fromGuid;
         entry["fromPin"] = fromPinIndex;
-        entry["toNode"] = toNodeIndex;
+        entry["toId"] = toGuid;
         entry["toPin"] = toPinIndex;
         json pointArray = json::array();
         for (const LinkPoint& point : link.points) {
@@ -256,6 +255,20 @@ static NodeId LoadNodeEntry(NodeGraph& graph, const json& entry,
         return INVALID_ID;
     }
 
+    // Restore the persistent guid when present and not already taken
+    // (malformed duplicates keep the freshly generated one).
+    if (entry.contains("id") && entry["id"].is_string()) {
+        const std::string fileGuid = entry["id"].get<std::string>();
+        if (!fileGuid.empty()) {
+            const Node* existing = graph.FindNodeByGuid(fileGuid);
+            if (existing == nullptr || existing == node) {
+                node->guid = fileGuid;
+            } else {
+                outErrors.push_back("duplicate node guid in file: " + fileGuid);
+            }
+        }
+    }
+
     if (!entry.contains("properties") || !entry["properties"].is_array()) {
         return nodeId;
     }
@@ -274,37 +287,67 @@ static NodeId LoadNodeEntry(NodeGraph& graph, const json& entry,
     return nodeId;
 }
 
+// Resolves the endpoint nodes of a link entry: new files use node guids
+// ("fromId"/"toId"), older files array indices ("fromNode"/"toNode").
+static bool ResolveLinkNodes(const NodeGraph& graph, const json& entry,
+                             const std::vector<NodeId>& loadedNodeIds,
+                             const Node*& outFromNode, const Node*& outToNode,
+                             std::vector<std::string>& outErrors)
+{
+    if (entry.contains("fromId") && entry["fromId"].is_string()
+        && entry.contains("toId") && entry["toId"].is_string()) {
+        outFromNode = graph.FindNodeByGuid(entry["fromId"].get<std::string>());
+        outToNode = graph.FindNodeByGuid(entry["toId"].get<std::string>());
+        if (outFromNode == nullptr || outToNode == nullptr) {
+            outErrors.push_back("link references an unknown node guid");
+            return false;
+        }
+        return true;
+    }
+
+    if (entry.contains("fromNode") && entry["fromNode"].is_number_integer()
+        && entry.contains("toNode") && entry["toNode"].is_number_integer()) {
+        const int fromNodeIndex = entry["fromNode"].get<int>();
+        const int toNodeIndex = entry["toNode"].get<int>();
+        if (fromNodeIndex < 0 || fromNodeIndex >= static_cast<int>(loadedNodeIds.size())
+            || toNodeIndex < 0 || toNodeIndex >= static_cast<int>(loadedNodeIds.size())) {
+            outErrors.push_back("link references a node out of range");
+            return false;
+        }
+        const NodeId fromNodeId = loadedNodeIds[static_cast<std::size_t>(fromNodeIndex)];
+        const NodeId toNodeId = loadedNodeIds[static_cast<std::size_t>(toNodeIndex)];
+        if (fromNodeId == INVALID_ID || toNodeId == INVALID_ID) {
+            outErrors.push_back("link references a skipped node");
+            return false;
+        }
+        outFromNode = graph.FindNode(fromNodeId);
+        outToNode = graph.FindNode(toNodeId);
+        return outFromNode != nullptr && outToNode != nullptr;
+    }
+
+    outErrors.push_back("link entry is malformed");
+    return false;
+}
+
 static void LoadLinkEntry(NodeGraph& graph, const json& entry,
                           const std::vector<NodeId>& loadedNodeIds,
                           std::vector<std::string>& outErrors)
 {
     if (!entry.is_object()
-        || !entry.contains("fromNode") || !entry["fromNode"].is_number_integer()
         || !entry.contains("fromPin") || !entry["fromPin"].is_number_integer()
-        || !entry.contains("toNode") || !entry["toNode"].is_number_integer()
         || !entry.contains("toPin") || !entry["toPin"].is_number_integer()) {
         outErrors.push_back("link entry is malformed");
         return;
     }
-    const int fromNodeIndex = entry["fromNode"].get<int>();
     const int fromPinIndex = entry["fromPin"].get<int>();
-    const int toNodeIndex = entry["toNode"].get<int>();
     const int toPinIndex = entry["toPin"].get<int>();
 
-    if (fromNodeIndex < 0 || fromNodeIndex >= static_cast<int>(loadedNodeIds.size())
-        || toNodeIndex < 0 || toNodeIndex >= static_cast<int>(loadedNodeIds.size())) {
-        outErrors.push_back("link references a node out of range");
-        return;
-    }
-    const NodeId fromNodeId = loadedNodeIds[static_cast<std::size_t>(fromNodeIndex)];
-    const NodeId toNodeId = loadedNodeIds[static_cast<std::size_t>(toNodeIndex)];
-    if (fromNodeId == INVALID_ID || toNodeId == INVALID_ID) {
-        outErrors.push_back("link references a skipped node");
+    const Node* fromNode = nullptr;
+    const Node* toNode = nullptr;
+    if (!ResolveLinkNodes(graph, entry, loadedNodeIds, fromNode, toNode, outErrors)) {
         return;
     }
 
-    const Node* fromNode = graph.FindNode(fromNodeId);
-    const Node* toNode = graph.FindNode(toNodeId);
     if (fromNode == nullptr || toNode == nullptr
         || fromPinIndex < 0 || fromPinIndex >= static_cast<int>(fromNode->outputs.size())
         || toPinIndex < 0 || toPinIndex >= static_cast<int>(toNode->inputs.size())) {

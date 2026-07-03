@@ -84,6 +84,8 @@ static void TestRoundTrip()
         }
     }
     Check(loadedStat != nullptr, "Test Stat restored");
+    Check(loadedStat != nullptr && statNode != nullptr && loadedStat->guid == statNode->guid,
+          "node guid preserved");
     if (loadedStat != nullptr) {
         Check(loadedStat->x == -30.0f && loadedStat->y == 200.0f, "node position");
         Check(loadedStat->propertyValues.size() == 3, "property count");

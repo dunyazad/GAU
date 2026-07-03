@@ -1,9 +1,11 @@
 #include "NodeGraph.h"
+#include "Guid.h"
 
 NodeId NodeGraph::AddNode(const NodeClass& nodeClass, float x, float y)
 {
     Node node;
     node.id = nextNodeId++;
+    node.guid = GenerateGuid();
     node.nodeClass = &nodeClass;
     node.x = x;
     node.y = y;
@@ -110,6 +112,16 @@ const Node* NodeGraph::FindNode(NodeId nodeId) const
 {
     for (const Node& node : nodes) {
         if (node.id == nodeId) {
+            return &node;
+        }
+    }
+    return nullptr;
+}
+
+const Node* NodeGraph::FindNodeByGuid(const std::string& guid) const
+{
+    for (const Node& node : nodes) {
+        if (node.guid == guid) {
             return &node;
         }
     }

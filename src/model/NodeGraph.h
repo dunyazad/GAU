@@ -32,6 +32,11 @@ struct CommentNode
 struct Node
 {
     NodeId id = INVALID_ID;
+    // Persistent identity (UUID v4): survives save/load and undo, is
+    // referenced by serialized links, and stays stable across sessions.
+    // Pasted copies get a fresh guid. The integer id above remains the
+    // fast runtime handle.
+    std::string guid;
     // Meta-object describing this node's type. Never null for nodes
     // created through NodeGraph::AddNode.
     const NodeClass* nodeClass = nullptr;
@@ -82,6 +87,7 @@ public:
 
     Node* FindNode(NodeId nodeId);
     const Node* FindNode(NodeId nodeId) const;
+    const Node* FindNodeByGuid(const std::string& guid) const;
     const std::vector<Node>& GetNodes() const { return nodes; }
 
     const Pin* FindPin(PinId pinId) const;
