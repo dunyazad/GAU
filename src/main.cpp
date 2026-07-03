@@ -20,8 +20,11 @@
 #include "interaction/EditorInputEvent.h"
 #include "interaction/ContextMenu.h"
 #include "interaction/ClassEditorDialog.h"
+#include "exec/ExecEngine.h"
 #include "interaction/ActionMenu.h"
 #include "interaction/HitTest.h"
+#include "interaction/LogPanel.h"
+#include "render/LogPanelRenderer.h"
 #include "interaction/PropertyPanel.h"
 #include "interaction/TabBar.h"
 #include "render/ActionMenuRenderer.h"
@@ -617,6 +620,8 @@ static void ProcessClassEditorAction(const ClassEditorAction& action, NodeGraph&
 
     if (action.editTarget != nullptr) {
         const std::string oldName = action.editTarget->GetName();
+        // The dialog does not edit the exec binding; preserve it.
+        const std::string execFnName = action.editTarget->GetExecFnName();
         if (!NodeClass::UpdateDynamic(action.editTarget, action.name, action.category,
                                       action.pins, action.properties)) {
             std::printf("class editor: builtin class cannot be edited\n");
@@ -624,7 +629,7 @@ static void ProcessClassEditorAction(const ClassEditorAction& action, NodeGraph&
         }
         graph.RebuildNodesOfClass(*action.editTarget);
         if (!UpdateNodeClassInFile("custom_nodes.json", oldName, action.name, action.category,
-                                   action.pins, action.properties, error)) {
+                                   action.pins, action.properties, execFnName, error)) {
             std::printf("custom_nodes.json: %s\n", error.c_str());
         }
         return;
@@ -634,7 +639,7 @@ static void ProcessClassEditorAction(const ClassEditorAction& action, NodeGraph&
         std::make_unique<NodeClass>(action.name, action.category, action.pins, action.properties));
 
     if (!AppendNodeClassToFile("custom_nodes.json", action.name, action.category,
-                               action.pins, action.properties, error)) {
+                               action.pins, action.properties, std::string(), error)) {
         std::printf("custom_nodes.json: %s\n", error.c_str());
     }
 }
@@ -922,6 +927,23 @@ static void CommitTabRename(TabRenameState& rename,
     std::printf("renamed: %s\n", doc.filePath.c_str());
 }
 
+// Runs the active graph; log output fans out to the console, the log
+// panel buffer, and later runtime views.
+static void RunActiveGraph(const Document& doc, std::vector<std::string>& logLines)
+{
+    logLines.push_back("--- Run: " + doc.displayName + " ---");
+    std::printf("[exec] --- Run: %s ---\n", doc.displayName.c_str());
+
+    ExecEngine engine(doc.graph, [&logLines](const std::string& message) {
+        std::printf("[exec] %s\n", message.c_str());
+        logLines.push_back(message);
+    });
+    if (engine.Run()) {
+        logLines.push_back("--- Done ---");
+        std::printf("[exec] --- Done ---\n");
+    }
+}
+
 // Pastes the clipboard at a canvas position and selects the new nodes.
 static void PasteClipboardAt(const GraphClipboard& clipboard, float canvasX, float canvasY,
                              NodeGraph& graph, UndoStack& undoStack,
@@ -1123,7 +1145,8 @@ static void CollectSessionDocuments(EditorSettings& settings,
 static bool ProcessTabBarClick(const EditorInputEvent& event, float screenWidth,
                                std::vector<std::unique_ptr<Document>>& documents,
                                int& activeDocIndex, PlatformWindow& window,
-                               CanvasController& controller, TabRenameState& tabRename)
+                               CanvasController& controller, TabRenameState& tabRename,
+                               std::vector<std::string>& logLines)
 {
     const TabBarHit hit = HitTestTabBar(event.x, event.y,
                                         static_cast<int>(documents.size()), screenWidth);
@@ -1159,6 +1182,9 @@ static bool ProcessTabBarClick(const EditorInputEvent& event, float screenWidth,
         activeDocIndex = AddNewDocument(documents, window);
         controller = CanvasController();
         break;
+    case TabBarHit::Kind::Run:
+        RunActiveGraph(*documents[static_cast<std::size_t>(activeDocIndex)], logLines);
+        break;
     case TabBarHit::Kind::Open:
         ShowGraphFileDialog(window.GetSDLWindow(), FileDialogType::OpenGraph);
         break;
@@ -1183,8 +1209,11 @@ int main(int argc, char** argv)
     settings.LoadFromFile(EDITOR_SETTINGS_PATH);
 
     PlatformWindow window;
-    if (!window.Init("GAU Node Editor", 1280, 720)) {
+    if (!window.Init("GAU Node Editor", settings.windowWidth, settings.windowHeight)) {
         return 1;
+    }
+    if (settings.windowMaximized) {
+        window.Maximize();
     }
 
     NVGcontext* vg = CreatePlatformNVGContext();
@@ -1203,6 +1232,8 @@ int main(int argc, char** argv)
     CommentId actionTargetCommentId = INVALID_ID;
     GraphClipboard clipboard;
     TabRenameState tabRename;
+    LogPanel logPanel;
+    std::vector<std::string> logLines;
     std::vector<EditorInputEvent> events;
 
     std::vector<std::unique_ptr<Document>> documents;
@@ -1342,12 +1373,24 @@ int main(int argc, char** argv)
             if (event.type == EditorInputType::MouseDown && event.y < TAB_BAR_HEIGHT) {
                 if (event.button == EditorMouseButton::Left) {
                     ProcessTabBarClick(event, screenWidth, documents, activeDocIndex,
-                                       window, controller, tabRename);
+                                       window, controller, tabRename, logLines);
                     // Blocking dialogs may have re-pumped the event list;
                     // stop iterating this frame's events.
                     break;
                 }
                 continue;
+            }
+
+            // Bottom log panel swallows clicks/wheel over it.
+            {
+                bool clearLog = false;
+                if (logPanel.HandleEvent(event, static_cast<int>(logLines.size()),
+                                         screenWidth, screenHeight, clearLog)) {
+                    if (clearLog) {
+                        logLines.clear();
+                    }
+                    continue;
+                }
             }
 
             if (event.type == EditorInputType::KeyDown) {
@@ -1477,6 +1520,7 @@ int main(int argc, char** argv)
             DrawPropertyPanel(vg, propertyPanel, *panelNode, screenWidth);
         }
 
+        DrawLogPanel(vg, logPanel, logLines, screenWidth, screenHeight);
         DrawContextMenu(vg, contextMenu);
         DrawActionMenu(vg, actionMenu);
         DrawClassEditorDialog(vg, classDialog, screenWidth, screenHeight);
@@ -1487,6 +1531,13 @@ int main(int argc, char** argv)
 
     settings.collapsedCategories = contextMenu.GetCollapsedCategories();
     CollectSessionDocuments(settings, documents, activeDocIndex);
+    settings.windowMaximized = window.IsMaximized();
+    if (!settings.windowMaximized) {
+        // Keep the last windowed size; a maximized exit must not
+        // overwrite it with the maximized dimensions.
+        settings.windowWidth = window.GetWidth();
+        settings.windowHeight = window.GetHeight();
+    }
     if (!settings.SaveToFile(EDITOR_SETTINGS_PATH)) {
         std::printf("editor_settings.json: failed to save settings\n");
     }

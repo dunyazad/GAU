@@ -27,12 +27,18 @@ static const NodeClass PrintStringClass("Print String", "Function", {
     {PinDirection::Output, PinType::Exec, ""},
 });
 
+// Literal nodes: the "Value" property feeds the same-named output via
+// the engine's default passthrough behavior.
 static const NodeClass MakeIntClass("Make Int", "Pure", {
     {PinDirection::Output, PinType::Int, "Value"},
+}, {
+    {"Value", PropertyContainer::None, PinType::Int, PinType::String, Value(0), {}, {}},
 });
 
 static const NodeClass MakeFloatClass("Make Float", "Pure", {
     {PinDirection::Output, PinType::Float, "Value"},
+}, {
+    {"Value", PropertyContainer::None, PinType::Float, PinType::String, Value(0.0), {}, {}},
 });
 
 static const NodeClass AddClass("Add", "Pure", {

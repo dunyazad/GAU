@@ -33,6 +33,7 @@ add_executable(gau
     src/render/TabBarRenderer.cpp
     src/render/PropertyPanelRenderer.cpp
     src/render/ActionMenuRenderer.cpp
+    src/render/LogPanelRenderer.cpp
     src/render/NodeRenderer.cpp
     src/render/LinkRenderer.cpp
     src/render/ContextMenuRenderer.cpp
@@ -47,8 +48,11 @@ add_executable(gau
     src/model/GraphClipboard.cpp
     src/model/GraphSerializer.cpp
     src/model/PropertyText.cpp
+    src/exec/ExecEngine.cpp
+    src/exec/BuiltinNodes.cpp
     src/interaction/ActionMenu.cpp
     src/interaction/ContextMenu.cpp
+    src/interaction/LogPanel.cpp
     src/interaction/PropertyPanel.cpp
     src/interaction/TabBar.cpp
     src/interaction/ClassEditorDialog.cpp
@@ -89,3 +93,17 @@ if(MSVC)
     target_compile_definitions(serializer_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 add_test(NAME serializer_tests COMMAND serializer_tests)
+
+add_executable(exec_tests
+    tests/ExecTests.cpp
+    src/model/NodeGraph.cpp
+    src/model/NodeClass.cpp
+    src/model/BuiltinNodeClasses.cpp
+    src/exec/ExecEngine.cpp
+    src/exec/BuiltinNodes.cpp
+)
+target_include_directories(exec_tests PRIVATE src)
+if(MSVC)
+    target_compile_definitions(exec_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME exec_tests COMMAND exec_tests)

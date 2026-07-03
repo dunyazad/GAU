@@ -24,6 +24,7 @@ struct TabBarHit
         Tab,
         CloseTab,
         NewTab,
+        Run,
         Open,
         Save,
         SaveAs,
@@ -36,6 +37,7 @@ struct TabBarHit
 UIRect TabRect(int tabIndex);
 UIRect TabCloseRect(int tabIndex);
 UIRect NewTabRect(int tabCount);
+UIRect RunButtonRect(float screenWidth);
 UIRect OpenButtonRect(float screenWidth);
 UIRect SaveButtonRect(float screenWidth);
 UIRect SaveAsButtonRect(float screenWidth);

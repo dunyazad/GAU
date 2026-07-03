@@ -4,11 +4,12 @@
 #include <utility>
 
 NodeClass::NodeClass(std::string name, std::string category, std::vector<PinDef> pins,
-                     std::vector<PropertyDef> properties)
+                     std::vector<PropertyDef> properties, std::string execFnName)
     : name(std::move(name))
     , category(std::move(category))
     , pins(std::move(pins))
     , properties(std::move(properties))
+    , execFnName(std::move(execFnName))
 {
     MutableRegistry().push_back(this);
 }

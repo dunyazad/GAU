@@ -32,6 +32,11 @@ struct EditorSettings
     // Path of the document that was active, empty if it was untitled.
     std::string activeFilePath;
 
+    // Window state at exit: windowed size plus whether it was maximized.
+    int windowWidth = 1280;
+    int windowHeight = 720;
+    bool windowMaximized = false;
+
     // Returns false when the file is missing or unreadable; the settings
     // keep their defaults in that case. Unknown JSON entries are ignored.
     bool LoadFromFile(const std::string& path);

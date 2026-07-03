@@ -55,7 +55,7 @@ class NodeClass
 {
 public:
     NodeClass(std::string name, std::string category, std::vector<PinDef> pins,
-              std::vector<PropertyDef> properties = {});
+              std::vector<PropertyDef> properties = {}, std::string execFnName = {});
 
     NodeClass(const NodeClass&) = delete;
     NodeClass& operator=(const NodeClass&) = delete;
@@ -64,6 +64,10 @@ public:
     const std::string& GetCategory() const { return category; }
     const std::vector<PinDef>& GetPins() const { return pins; }
     const std::vector<PropertyDef>& GetProperties() const { return properties; }
+    // Name of the native exec function bound to this class (JSON
+    // "execFn"). Empty means: look up by class name, else the default
+    // passthrough behavior.
+    const std::string& GetExecFnName() const { return execFnName; }
 
     // True for classes registered at runtime (JSON file or the class
     // editor dialog); builtin static classes return false and cannot
@@ -97,5 +101,6 @@ private:
     std::string category;
     std::vector<PinDef> pins;
     std::vector<PropertyDef> properties;
+    std::string execFnName;
     bool dynamic = false;
 };

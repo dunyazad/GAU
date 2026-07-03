@@ -44,7 +44,7 @@ int LoadNodeClassesFromFile(const std::string& path, std::vector<std::string>& o
 bool AppendNodeClassToFile(const std::string& path, const std::string& name,
                            const std::string& category, const std::vector<PinDef>& pins,
                            const std::vector<PropertyDef>& properties,
-                           std::string& outError);
+                           const std::string& execFnName, std::string& outError);
 
 // Replaces the entry whose "name" equals oldName with the new
 // definition. Returns false if the file is unreadable or has no such
@@ -53,4 +53,4 @@ bool UpdateNodeClassInFile(const std::string& path, const std::string& oldName,
                            const std::string& name, const std::string& category,
                            const std::vector<PinDef>& pins,
                            const std::vector<PropertyDef>& properties,
-                           std::string& outError);
+                           const std::string& execFnName, std::string& outError);

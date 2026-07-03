@@ -314,9 +314,15 @@ static bool ParseNodeClass(const json& classJson, std::string& outError)
         }
     }
 
+    std::string execFnName;
+    if (classJson.contains("execFn") && classJson["execFn"].is_string()) {
+        execFnName = classJson["execFn"].get<std::string>();
+    }
+
     // Constructor self-registers; AdoptDynamic only stores ownership.
     NodeClass::AdoptDynamic(
-        std::make_unique<NodeClass>(name, category, std::move(pins), std::move(properties)));
+        std::make_unique<NodeClass>(name, category, std::move(pins), std::move(properties),
+                                    std::move(execFnName)));
     return true;
 }
 
@@ -363,11 +369,15 @@ static json PropertyDefaultToJson(const PropertyDef& property)
 
 static json BuildClassEntry(const std::string& name, const std::string& category,
                             const std::vector<PinDef>& pins,
-                            const std::vector<PropertyDef>& properties)
+                            const std::vector<PropertyDef>& properties,
+                            const std::string& execFnName)
 {
     json entry;
     entry["name"] = name;
     entry["category"] = category;
+    if (!execFnName.empty()) {
+        entry["execFn"] = execFnName;
+    }
     json pinArray = json::array();
     for (const PinDef& pin : pins) {
         json pinJson;
@@ -434,13 +444,13 @@ static bool WriteClassFile(const std::string& path, const json& root, std::strin
 bool AppendNodeClassToFile(const std::string& path, const std::string& name,
                            const std::string& category, const std::vector<PinDef>& pins,
                            const std::vector<PropertyDef>& properties,
-                           std::string& outError)
+                           const std::string& execFnName, std::string& outError)
 {
     json root;
     if (!ReadClassFile(path, root, outError)) {
         return false;
     }
-    root["nodeClasses"].push_back(BuildClassEntry(name, category, pins, properties));
+    root["nodeClasses"].push_back(BuildClassEntry(name, category, pins, properties, execFnName));
     return WriteClassFile(path, root, outError);
 }
 
@@ -448,7 +458,7 @@ bool UpdateNodeClassInFile(const std::string& path, const std::string& oldName,
                            const std::string& name, const std::string& category,
                            const std::vector<PinDef>& pins,
                            const std::vector<PropertyDef>& properties,
-                           std::string& outError)
+                           const std::string& execFnName, std::string& outError)
 {
     json root;
     if (!ReadClassFile(path, root, outError)) {
@@ -457,7 +467,7 @@ bool UpdateNodeClassInFile(const std::string& path, const std::string& oldName,
     for (json& entry : root["nodeClasses"]) {
         if (entry.is_object() && entry.contains("name") && entry["name"].is_string()
             && entry["name"].get<std::string>() == oldName) {
-            entry = BuildClassEntry(name, category, pins, properties);
+            entry = BuildClassEntry(name, category, pins, properties, execFnName);
             return WriteClassFile(path, root, outError);
         }
     }

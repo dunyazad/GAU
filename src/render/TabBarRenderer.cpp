@@ -7,11 +7,12 @@
 static const char* FONT_REGULAR = "sans";
 static const float TAB_FONT_SIZE = 13.0f * UI_SCALE;
 
-static void DrawBarButton(NVGcontext* vg, const UIRect& rect, const char* label)
+static void DrawBarButton(NVGcontext* vg, const UIRect& rect, const char* label,
+                          bool accent = false)
 {
     nvgBeginPath(vg);
     nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, 3.0f * UI_SCALE);
-    nvgFillColor(vg, nvgRGB(45, 45, 50));
+    nvgFillColor(vg, accent ? nvgRGB(45, 110, 60) : nvgRGB(45, 45, 50));
     nvgFill(vg);
     nvgStrokeColor(vg, nvgRGB(70, 70, 78));
     nvgStrokeWidth(vg, 1.0f);
@@ -86,6 +87,7 @@ void DrawTabBar(NVGcontext* vg, const std::vector<std::string>& tabNames,
     nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     nvgText(vg, newTab.x + newTab.w * 0.5f, newTab.y + newTab.h * 0.5f, "+", nullptr);
 
+    DrawBarButton(vg, RunButtonRect(screenWidth), "Run", true);
     DrawBarButton(vg, OpenButtonRect(screenWidth), "Open");
     DrawBarButton(vg, SaveButtonRect(screenWidth), "Save");
     DrawBarButton(vg, SaveAsButtonRect(screenWidth), "Save As");

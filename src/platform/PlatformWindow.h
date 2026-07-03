@@ -49,6 +49,10 @@ public:
     // Opaque handle for other platform modules (e.g. file dialogs).
     SDL_Window* GetSDLWindow() const { return window; }
 
+    // Window state persistence (session restore).
+    bool IsMaximized() const;
+    void Maximize();
+
 private:
     void UpdateSizes();
 

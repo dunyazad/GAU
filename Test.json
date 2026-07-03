@@ -1,0 +1,103 @@
+{
+  "comments": [],
+  "links": [
+    {
+      "fromNode": 0,
+      "fromPin": 0,
+      "points": [],
+      "toNode": 1,
+      "toPin": 0
+    },
+    {
+      "fromNode": 0,
+      "fromPin": 1,
+      "points": [],
+      "toNode": 1,
+      "toPin": 1
+    },
+    {
+      "fromNode": 0,
+      "fromPin": 2,
+      "points": [],
+      "toNode": 1,
+      "toPin": 2
+    },
+    {
+      "fromNode": 1,
+      "fromPin": 0,
+      "points": [],
+      "toNode": 4,
+      "toPin": 0
+    },
+    {
+      "fromNode": 1,
+      "fromPin": 1,
+      "points": [],
+      "toNode": 4,
+      "toPin": 1
+    },
+    {
+      "fromNode": 1,
+      "fromPin": 2,
+      "points": [],
+      "toNode": 4,
+      "toPin": 2
+    },
+    {
+      "fromNode": 4,
+      "fromPin": 0,
+      "points": [],
+      "toNode": 3,
+      "toPin": 1
+    },
+    {
+      "fromNode": 2,
+      "fromPin": 0,
+      "points": [],
+      "toNode": 3,
+      "toPin": 0
+    }
+  ],
+  "nodes": [
+    {
+      "class": "Vector3f",
+      "properties": [
+        10.0,
+        29.0,
+        0.01
+      ],
+      "x": 210.70761108398438,
+      "y": 290.7030029296875
+    },
+    {
+      "class": "Vector3f",
+      "properties": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "x": 526.0735473632813,
+      "y": 304.54364013671875
+    },
+    {
+      "class": "Event Begin",
+      "properties": [],
+      "x": 170.0648956298828,
+      "y": 101.28252410888672
+    },
+    {
+      "class": "Print String",
+      "properties": [],
+      "x": 1032.6671142578125,
+      "y": 126.34602355957031
+    },
+    {
+      "class": "MakeString",
+      "properties": [
+        ""
+      ],
+      "x": 742.3482055664063,
+      "y": 289.2586975097656
+    }
+  ]
+}

@@ -72,6 +72,21 @@ bool EditorSettings::LoadFromFile(const std::string& path)
             activeFilePath = session["activeFile"].get<std::string>();
         }
     }
+
+    if (root.contains("window") && root["window"].is_object()) {
+        const json& windowJson = root["window"];
+        if (windowJson.contains("width") && windowJson["width"].is_number_integer()
+            && windowJson["width"].get<int>() > 0) {
+            windowWidth = windowJson["width"].get<int>();
+        }
+        if (windowJson.contains("height") && windowJson["height"].is_number_integer()
+            && windowJson["height"].get<int>() > 0) {
+            windowHeight = windowJson["height"].get<int>();
+        }
+        if (windowJson.contains("maximized") && windowJson["maximized"].is_boolean()) {
+            windowMaximized = windowJson["maximized"].get<bool>();
+        }
+    }
     return true;
 }
 
@@ -98,6 +113,9 @@ bool EditorSettings::SaveToFile(const std::string& path) const
     root["contextMenu"]["collapsedCategories"] = collapsedArray;
     root["session"]["openFiles"] = openArray;
     root["session"]["activeFile"] = activeFilePath;
+    root["window"]["width"] = windowWidth;
+    root["window"]["height"] = windowHeight;
+    root["window"]["maximized"] = windowMaximized;
 
     std::ofstream file(path);
     if (!file.is_open()) {

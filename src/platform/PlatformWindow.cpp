@@ -132,3 +132,19 @@ void PlatformWindow::UpdateSizes()
     SDL_GetWindowSize(window, &windowWidth, &windowHeight);
     SDL_GetWindowSizeInPixels(window, &drawableWidth, &drawableHeight);
 }
+
+bool PlatformWindow::IsMaximized() const
+{
+    if (window == nullptr) {
+        return false;
+    }
+    return (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) != 0;
+}
+
+void PlatformWindow::Maximize()
+{
+    if (window != nullptr) {
+        SDL_MaximizeWindow(window);
+        UpdateSizes();
+    }
+}

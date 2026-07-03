@@ -38,6 +38,13 @@ UIRect OpenButtonRect(float screenWidth)
                   save.y, TAB_OPEN_SAVE_WIDTH, save.h};
 }
 
+UIRect RunButtonRect(float screenWidth)
+{
+    const UIRect open = OpenButtonRect(screenWidth);
+    return UIRect{open.x - TAB_OPEN_SAVE_WIDTH - TAB_BUTTON_MARGIN,
+                  open.y, TAB_OPEN_SAVE_WIDTH, open.h};
+}
+
 TabBarHit HitTestTabBar(float x, float y, int tabCount, float screenWidth)
 {
     TabBarHit hit;
@@ -45,6 +52,10 @@ TabBarHit HitTestTabBar(float x, float y, int tabCount, float screenWidth)
         return hit;
     }
 
+    if (RunButtonRect(screenWidth).Contains(x, y)) {
+        hit.kind = TabBarHit::Kind::Run;
+        return hit;
+    }
     if (OpenButtonRect(screenWidth).Contains(x, y)) {
         hit.kind = TabBarHit::Kind::Open;
         return hit;
