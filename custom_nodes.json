@@ -100,7 +100,7 @@
     },
     {
       "category": "Function",
-      "name": "Print",
+      "name": "ToString",
       "pins": [
         {
           "direction": "in",

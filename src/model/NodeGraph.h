@@ -110,6 +110,12 @@ public:
     bool IsPinConnected(PinId pinId) const;
     const std::vector<Link>& GetLinks() const { return links; }
 
+    // Re-insert previously removed elements verbatim (undo of delete
+    // commands). Ids stay valid because id counters never reuse values.
+    void RestoreNode(const Node& node) { nodes.push_back(node); }
+    void RestoreLink(const Link& link) { links.push_back(link); }
+    void RestoreComment(const CommentNode& comment) { comments.push_back(comment); }
+
     CommentId AddComment(const std::string& title, float x, float y, float width, float height);
     bool RemoveComment(CommentId commentId);
     CommentNode* FindComment(CommentId commentId);

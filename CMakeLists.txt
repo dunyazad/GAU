@@ -32,6 +32,7 @@ add_executable(gau
     src/render/CommentRenderer.cpp
     src/render/TabBarRenderer.cpp
     src/render/PropertyPanelRenderer.cpp
+    src/render/ActionMenuRenderer.cpp
     src/render/NodeRenderer.cpp
     src/render/LinkRenderer.cpp
     src/render/ContextMenuRenderer.cpp
@@ -45,6 +46,7 @@ add_executable(gau
     src/model/GraphCommands.cpp
     src/model/GraphSerializer.cpp
     src/model/PropertyText.cpp
+    src/interaction/ActionMenu.cpp
     src/interaction/ContextMenu.cpp
     src/interaction/PropertyPanel.cpp
     src/interaction/TabBar.cpp

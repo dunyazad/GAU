@@ -127,6 +127,83 @@ void RemoveLinksCommand::Undo(NodeGraph& graph)
     }
 }
 
+DeleteNodesCommand::DeleteNodesCommand(std::vector<NodeId> nodeIds)
+    : nodeIds(std::move(nodeIds))
+{
+}
+
+bool DeleteNodesCommand::Execute(NodeGraph& graph)
+{
+    savedNodes.clear();
+    savedLinks.clear();
+
+    for (NodeId nodeId : nodeIds) {
+        const Node* node = graph.FindNode(nodeId);
+        if (node != nullptr) {
+            savedNodes.push_back(*node);
+        }
+    }
+    if (savedNodes.empty()) {
+        return false;
+    }
+
+    auto pinBelongsToSaved = [this](PinId pinId) {
+        for (const Node& node : savedNodes) {
+            for (const Pin& pin : node.inputs) {
+                if (pin.id == pinId) {
+                    return true;
+                }
+            }
+            for (const Pin& pin : node.outputs) {
+                if (pin.id == pinId) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    for (const Link& link : graph.GetLinks()) {
+        if (pinBelongsToSaved(link.fromPinId) || pinBelongsToSaved(link.toPinId)) {
+            savedLinks.push_back(link);
+        }
+    }
+
+    for (const Node& node : savedNodes) {
+        graph.RemoveNode(node.id);
+    }
+    return true;
+}
+
+void DeleteNodesCommand::Undo(NodeGraph& graph)
+{
+    for (const Node& node : savedNodes) {
+        graph.RestoreNode(node);
+    }
+    for (const Link& link : savedLinks) {
+        graph.RestoreLink(link);
+    }
+}
+
+DeleteCommentCommand::DeleteCommentCommand(CommentId commentId)
+    : commentId(commentId)
+{
+}
+
+bool DeleteCommentCommand::Execute(NodeGraph& graph)
+{
+    const CommentNode* comment = graph.FindComment(commentId);
+    if (comment == nullptr) {
+        return false;
+    }
+    savedComment = *comment;
+    return graph.RemoveComment(commentId);
+}
+
+void DeleteCommentCommand::Undo(NodeGraph& graph)
+{
+    graph.RestoreComment(savedComment);
+}
+
 SetNodePropertyCommand::SetNodePropertyCommand(NodeId nodeId, int propertyIndex,
                                                PropertyValue newValue)
     : nodeId(nodeId)

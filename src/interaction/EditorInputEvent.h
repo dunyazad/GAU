@@ -26,6 +26,7 @@ enum class EditorKey
 {
     None,
     Backspace,
+    Delete,
     Escape,
     Enter,
     Tab,

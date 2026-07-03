@@ -19,9 +19,11 @@
 #include "interaction/EditorInputEvent.h"
 #include "interaction/ContextMenu.h"
 #include "interaction/ClassEditorDialog.h"
+#include "interaction/ActionMenu.h"
 #include "interaction/HitTest.h"
 #include "interaction/PropertyPanel.h"
 #include "interaction/TabBar.h"
+#include "render/ActionMenuRenderer.h"
 #include "model/PropertyText.h"
 #include "render/PropertyPanelRenderer.h"
 #include "render/ClassEditorDialogRenderer.h"
@@ -1175,6 +1177,9 @@ int main(int argc, char** argv)
     ContextMenu contextMenu;
     ClassEditorDialog classDialog;
     PropertyPanel propertyPanel;
+    ActionMenu actionMenu;
+    NodeId actionTargetNodeId = INVALID_ID;
+    CommentId actionTargetCommentId = INVALID_ID;
     TabRenameState tabRename;
     std::vector<EditorInputEvent> events;
 
@@ -1203,6 +1208,32 @@ int main(int argc, char** argv)
             if (classDialog.IsOpen()) {
                 const ClassEditorAction action = classDialog.HandleEvent(event);
                 ProcessClassEditorAction(action, doc.graph);
+                continue;
+            }
+
+            if (actionMenu.IsOpen()) {
+                const ActionMenuResult result = actionMenu.HandleEvent(event);
+                if (result.type == ActionMenuResult::Type::Selected && result.itemIndex == 0) {
+                    if (actionTargetNodeId != INVALID_ID) {
+                        std::vector<NodeId> deleteIds;
+                        if (controller.IsSelected(actionTargetNodeId)) {
+                            deleteIds = controller.selectedNodes;
+                        } else {
+                            deleteIds.push_back(actionTargetNodeId);
+                        }
+                        doc.undoStack.Execute(
+                            std::make_unique<DeleteNodesCommand>(std::move(deleteIds)),
+                            doc.graph);
+                        controller.selectedNodes.clear();
+                    } else if (actionTargetCommentId != INVALID_ID) {
+                        if (controller.editingCommentId == actionTargetCommentId) {
+                            controller.CancelTitleEdit();
+                        }
+                        doc.undoStack.Execute(
+                            std::make_unique<DeleteCommentCommand>(actionTargetCommentId),
+                            doc.graph);
+                    }
+                }
                 continue;
             }
 
@@ -1304,10 +1335,38 @@ int main(int argc, char** argv)
                                      screenWidth, screenHeight);
                     continue;
                 }
+                if (event.key == EditorKey::Delete) {
+                    if (!controller.selectedNodes.empty()) {
+                        doc.undoStack.Execute(
+                            std::make_unique<DeleteNodesCommand>(controller.selectedNodes),
+                            doc.graph);
+                        controller.selectedNodes.clear();
+                    }
+                    continue;
+                }
             }
 
             if (controller.HandleEvent(event, doc.canvas, doc.graph, layoutCache, doc.undoStack)) {
+                // Right click: action menu on a node/comment, creation
+                // menu on empty canvas.
                 const Vec2 canvasPos = doc.canvas.ScreenToCanvas(Vec2{event.x, event.y});
+                const NodeId hitNodeId = HitTestNode(layoutCache, canvasPos.x, canvasPos.y);
+                if (hitNodeId != INVALID_ID) {
+                    actionTargetNodeId = hitNodeId;
+                    actionTargetCommentId = INVALID_ID;
+                    actionMenu.Open(event.x, event.y, {"Delete"},
+                                    screenWidth, screenHeight);
+                    continue;
+                }
+                const CommentId hitCommentId =
+                    HitTestCommentTitle(doc.graph, canvasPos.x, canvasPos.y);
+                if (hitCommentId != INVALID_ID) {
+                    actionTargetNodeId = INVALID_ID;
+                    actionTargetCommentId = hitCommentId;
+                    actionMenu.Open(event.x, event.y, {"Delete Comment"},
+                                    screenWidth, screenHeight);
+                    continue;
+                }
                 contextMenu.Open(event.x, event.y, canvasPos.x, canvasPos.y,
                                  screenWidth, screenHeight);
             }
@@ -1352,6 +1411,7 @@ int main(int argc, char** argv)
         }
 
         DrawContextMenu(vg, contextMenu);
+        DrawActionMenu(vg, actionMenu);
         DrawClassEditorDialog(vg, classDialog, screenWidth, screenHeight);
         nvgEndFrame(vg);
 

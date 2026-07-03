@@ -2,6 +2,7 @@
 
 #include "GraphTypes.h"
 #include "NodeClass.h"
+#include "NodeGraph.h"
 #include "UndoStack.h"
 
 #include <string>
@@ -87,6 +88,37 @@ private:
 
     std::vector<LinkId> linkIds;
     std::vector<Endpoints> removedEndpoints;
+};
+
+// Deletes nodes (Delete key / context menu) together with their links;
+// undo restores everything verbatim including property values and
+// reroute waypoints.
+class DeleteNodesCommand : public GraphCommand
+{
+public:
+    explicit DeleteNodesCommand(std::vector<NodeId> nodeIds);
+
+    bool Execute(NodeGraph& graph) override;
+    void Undo(NodeGraph& graph) override;
+
+private:
+    std::vector<NodeId> nodeIds;
+    std::vector<Node> savedNodes;
+    std::vector<Link> savedLinks;
+};
+
+// Deletes a comment box.
+class DeleteCommentCommand : public GraphCommand
+{
+public:
+    explicit DeleteCommentCommand(CommentId commentId);
+
+    bool Execute(NodeGraph& graph) override;
+    void Undo(NodeGraph& graph) override;
+
+private:
+    CommentId commentId;
+    CommentNode savedComment;
 };
 
 // Sets one property value of a node instance (property panel edit).

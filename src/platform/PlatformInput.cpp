@@ -12,6 +12,8 @@ static EditorKey TranslateKey(SDL_Keycode keycode, SDL_Keymod mod)
     switch (keycode) {
     case SDLK_BACKSPACE:
         return EditorKey::Backspace;
+    case SDLK_DELETE:
+        return EditorKey::Delete;
     case SDLK_ESCAPE:
         return EditorKey::Escape;
     case SDLK_RETURN:
