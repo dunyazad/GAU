@@ -278,6 +278,8 @@ int main()
         }
         selTypeId = list[(idx + 1) % list.size()];
     };
+    // Fields accumulated by the type editor for the next struct/enum.
+    std::vector<StructField> pendingFields;
     BuiltinRegistry builtins;
     RegisterDemoClasses(classes, types);
     RegisterConversionNodes(classes, builtins, types);
@@ -691,6 +693,77 @@ int main()
         panels.push_back(std::move(panel));
     }
 
+    // Type editor panel (top-left, under Var): define struct/enum user types
+    // in-app (SRS 2.1 authoring, FR-TYP-6). Add Member accumulates a field of
+    // the selected type; Make Struct/Make Enum registers the type (and, for a
+    // struct, its Make/Break nodes) and clears the pending fields.
+    ui::Label* fieldsLabel = nullptr;
+    {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
+        auto column = std::make_unique<ui::Column>(4.0f);
+        auto nameRow = std::make_unique<ui::Row>(6.0f);
+        auto nameField = std::make_unique<ui::TextField>("Type", [](const std::string&) {}, 100.0f);
+        ui::TextField* typeNameField = nameField.get();
+        nameRow->Add(std::make_unique<ui::Label>("Name"));
+        nameRow->Add(std::move(nameField));
+        column->Add(std::move(nameRow));
+
+        auto memberRow = std::make_unique<ui::Row>(6.0f);
+        auto memberField =
+            std::make_unique<ui::TextField>("field", [](const std::string&) {}, 90.0f);
+        ui::TextField* memField = memberField.get();
+        memberRow->Add(std::make_unique<ui::Label>("Member"));
+        memberRow->Add(std::move(memberField));
+        memberRow->Add(std::make_unique<ui::Button>("Add Member", [&, memField]() {
+            if (!memField->Value().empty()) {
+                pendingFields.push_back(StructField{memField->Value(), selTypeId});
+                memField->SetValue("");
+            }
+        }));
+        auto flabel = std::make_unique<ui::Label>("fields: 0");
+        fieldsLabel = flabel.get();
+        memberRow->Add(std::move(flabel));
+        column->Add(std::move(memberRow));
+
+        auto makeRow = std::make_unique<ui::Row>(6.0f);
+        makeRow->Add(std::make_unique<ui::Button>("Make Struct", [&, typeNameField]() {
+            if (typeNameField->Value().empty() || pendingFields.empty()) {
+                return;
+            }
+            StructDef def;
+            def.name = typeNameField->Value();
+            def.fields = pendingFields;
+            types.DefineStruct(def);
+            RegisterStructNodes(classes, builtins, types, def);
+            pendingFields.clear();
+            if (rebuildPalette) {
+                rebuildPalette();
+            }
+        }));
+        makeRow->Add(std::make_unique<ui::Button>("Make Enum", [&, typeNameField]() {
+            if (typeNameField->Value().empty() || pendingFields.empty()) {
+                return;
+            }
+            EnumDef def;
+            def.name = typeNameField->Value();
+            for (const StructField& f : pendingFields) {
+                def.values.push_back(f.name);
+            }
+            types.DefineEnum(def);
+            pendingFields.clear();
+            if (rebuildPalette) {
+                rebuildPalette();
+            }
+        }));
+        column->Add(std::move(makeRow));
+
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(column));
+        const ui::Size s = raw->Measure(painter, ui::Size{360.0f, 120.0f});
+        raw->Arrange(ui::Rect{8.0f, 280.0f, s.w + 8.0f, s.h + 8.0f});
+        panels.push_back(std::move(panel));
+    }
+
     // Save/load the whole project. Load resets the registries in place (so
     // references stay valid), re-imports, then rebinds behaviors and rebuilds
     // dependent UI.
@@ -716,6 +789,7 @@ int main()
         breakpoints.clear();
         shownNode = INVALID_ID;
         histories.clear();
+        pendingFields.clear();
         if (rebuildPalette) {
             rebuildPalette();
         }
@@ -942,6 +1016,9 @@ int main()
 
         if (typeLabel != nullptr) {
             typeLabel->SetText(types.TypeName(selTypeId));
+        }
+        if (fieldsLabel != nullptr) {
+            fieldsLabel->SetText("fields: " + std::to_string(pendingFields.size()));
         }
 
         if (infoLabel != nullptr) {
