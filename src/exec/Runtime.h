@@ -28,6 +28,22 @@ enum class RunState
     Error,
 };
 
+enum class RunErrorKind
+{
+    None,
+    NodeNotFound,       // exec advanced to a node id that no longer exists
+    StepLimitExceeded,  // Run hit its step budget while still running
+};
+
+// Structured diagnostic for a failed run (SRS FR-EXE-4): what went wrong and
+// the node the runtime was on when it did.
+struct RunError
+{
+    RunErrorKind kind = RunErrorKind::None;
+    NodeId node = INVALID_ID;
+    std::string message;
+};
+
 struct NodeEval;
 using NodeFn = std::function<void(NodeEval&)>;
 
@@ -65,6 +81,8 @@ public:
 
     RunState State() const { return state; }
     NodeId CurrentNode() const { return pcNode; }
+    // Diagnostic for the last error; kind is None unless State() is Error.
+    const RunError& Error() const { return lastError; }
 
     // Evaluates a pin's value for a watch view (input pins pull their
     // source; output pins evaluate their owner when pure).
@@ -127,6 +145,7 @@ private:
     PinId chosenExec = INVALID_ID;
     bool ignoreBreakOnce = false;
     int callDepth = 0;
+    RunError lastError;
 };
 
 // Passed to a node behavior during evaluation. Indices refer to the

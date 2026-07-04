@@ -291,6 +291,7 @@ void Runtime::Start(NodeId entryNode)
     pcNode = entryNode;
     chosenExec = INVALID_ID;
     ignoreBreakOnce = false;
+    lastError = RunError{};
     state = (entryNode != INVALID_ID) ? RunState::Running : RunState::Done;
 }
 
@@ -315,6 +316,8 @@ RunState Runtime::Step()
 
     const Node* node = graph->FindNode(pcNode);
     if (node == nullptr) {
+        lastError = RunError{RunErrorKind::NodeNotFound, pcNode,
+                             "exec reached a missing node id " + std::to_string(pcNode)};
         state = RunState::Error;
         return state;
     }
@@ -346,6 +349,12 @@ bool Runtime::Run(int maxSteps)
     while (state == RunState::Running && steps < maxSteps) {
         Step();
         ++steps;
+    }
+    if (state == RunState::Running) {
+        lastError = RunError{RunErrorKind::StepLimitExceeded, pcNode,
+                             "step limit (" + std::to_string(maxSteps)
+                                 + ") exceeded at node " + std::to_string(pcNode)};
+        state = RunState::Error;
     }
     return state == RunState::Done;
 }

@@ -147,11 +147,55 @@ static void TestBreakpoint()
     Check(done && logs.size() == 1 && logs[0] == "9", "resumes and prints 9");
 }
 
+static void TestStepLimitError()
+{
+    TypeRegistry t;
+    NodeClassRegistry classes;
+    RegisterClasses(classes, t);
+    BuiltinRegistry builtins;
+    RegisterDemoBuiltins(builtins);
+
+    Graph g(t);
+    const NodeId ev = g.AddNode(*classes.Find("EventBegin"), 0, 0);
+    const NodeId p1 = g.AddNode(*classes.Find("PrintInt"), 0, 0);
+    const NodeId p2 = g.AddNode(*classes.Find("PrintInt"), 0, 0);
+    const NodeId p3 = g.AddNode(*classes.Find("PrintInt"), 0, 0);
+    g.AddLink(g.FindNode(ev)->outputs[0].id, g.FindNode(p1)->inputs[0].id);
+    g.AddLink(g.FindNode(p1)->outputs[0].id, g.FindNode(p2)->inputs[0].id);
+    g.AddLink(g.FindNode(p2)->outputs[0].id, g.FindNode(p3)->inputs[0].id);
+
+    Runtime rt(g, t, classes, builtins, nullptr);
+    rt.Start(ev);
+    const bool done = rt.Run(2);
+    Check(!done && rt.State() == RunState::Error, "step limit ends in error");
+    Check(rt.Error().kind == RunErrorKind::StepLimitExceeded, "error kind is StepLimitExceeded");
+    Check(!rt.Error().message.empty(), "error carries a message");
+}
+
+static void TestNodeNotFoundError()
+{
+    TypeRegistry t;
+    NodeClassRegistry classes;
+    RegisterClasses(classes, t);
+    BuiltinRegistry builtins;
+    RegisterDemoBuiltins(builtins);
+
+    Graph g(t);
+    Runtime rt(g, t, classes, builtins, nullptr);
+    rt.Start(9999); // no such node
+    rt.Step();
+    Check(rt.State() == RunState::Error, "missing entry node errors");
+    Check(rt.Error().kind == RunErrorKind::NodeNotFound && rt.Error().node == 9999,
+          "error identifies the missing node");
+}
+
 int main()
 {
     TestDataFlowAndExec();
     TestBranch();
     TestBreakpoint();
+    TestStepLimitError();
+    TestNodeNotFoundError();
     if (failCount == 0) {
         std::printf("exec_vm_tests: all passed\n");
     }
