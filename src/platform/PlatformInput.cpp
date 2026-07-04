@@ -48,6 +48,8 @@ static EditorKey TranslateKey(SDL_Keycode keycode, SDL_Keymod mod)
         return ctrl ? EditorKey::Paste : EditorKey::None;
     case SDLK_A:
         return ctrl ? EditorKey::SelectAll : EditorKey::None;
+    case SDLK_Q:
+        return (!ctrl && !shift) ? EditorKey::StraightenConnections : EditorKey::None;
     default:
         return EditorKey::None;
     }

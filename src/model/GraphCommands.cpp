@@ -297,9 +297,10 @@ void DeleteCommentCommand::Undo(NodeGraph& graph)
 }
 
 SetNodePropertyCommand::SetNodePropertyCommand(NodeId nodeId, int propertyIndex,
-                                               PropertyValue newValue)
+                                               PropertyValue newValue, int fieldIndex)
     : nodeId(nodeId)
     , propertyIndex(propertyIndex)
+    , fieldIndex(fieldIndex)
     , newValue(std::move(newValue))
 {
 }
@@ -311,8 +312,16 @@ bool SetNodePropertyCommand::Execute(NodeGraph& graph)
         || propertyIndex >= static_cast<int>(node->propertyValues.size())) {
         return false;
     }
-    oldValue = node->propertyValues[static_cast<std::size_t>(propertyIndex)];
-    node->propertyValues[static_cast<std::size_t>(propertyIndex)] = newValue;
+    PropertyValue& target = node->propertyValues[static_cast<std::size_t>(propertyIndex)];
+    oldValue = target;
+    if (fieldIndex >= 0) {
+        if (fieldIndex >= static_cast<int>(target.structFields.size())) {
+            return false;
+        }
+        target.structFields[static_cast<std::size_t>(fieldIndex)].scalar = newValue.scalar;
+    } else {
+        target = newValue;
+    }
     return true;
 }
 

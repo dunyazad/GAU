@@ -2,6 +2,8 @@
 
 #include "interaction/ClassEditorDialog.h"
 
+#include "model/UserType.h"
+
 #include <nanovg.h>
 
 #include <string>
@@ -26,9 +28,40 @@ static const char* PinTypeDisplayName(PinType type)
         return "String";
     case PinType::Object:
         return "Object";
+    case PinType::UserType:
+        return "";
     }
     return "";
 }
+
+// Closed-dropdown label for a type cell: the user type name when set,
+// else the builtin display name.
+static std::string TypeCellLabel(PinType type, const std::string& typeName)
+{
+    if (type == PinType::UserType) {
+        return typeName;
+    }
+    return PinTypeDisplayName(type);
+}
+
+static const char* KindDisplayName(UserTypeKind kind)
+{
+    switch (kind) {
+    case UserTypeKind::Enum:
+        return "Enum";
+    case UserTypeKind::Struct:
+        return "Struct";
+    case UserTypeKind::ObjectAlias:
+        return "Object";
+    }
+    return "";
+}
+
+static const UserTypeKind KIND_ORDER[3] = {
+    UserTypeKind::Enum,
+    UserTypeKind::Struct,
+    UserTypeKind::ObjectAlias,
+};
 
 static const char* ContainerDisplayName(PropertyContainer container)
 {
@@ -53,12 +86,16 @@ static const char* DropdownOptionLabel(const ClassEditorDialog& dialog, int opti
     case DialogDropdownKind::Category:
         return dialog.GetCategoryOptions()[static_cast<std::size_t>(optionIndex)].c_str();
     case DialogDropdownKind::PinType:
-        return PinTypeDisplayName(ALL_PIN_TYPES[optionIndex]);
-    case DialogDropdownKind::PropertyContainer:
-        return ContainerDisplayName(ALL_PROPERTY_CONTAINERS[optionIndex]);
     case DialogDropdownKind::PropertyType:
     case DialogDropdownKind::PropertyKeyType:
-        return PinTypeDisplayName(VALUE_PIN_TYPES[optionIndex]);
+    case DialogDropdownKind::FieldType:
+        return dialog.GetTypeOptions()[static_cast<std::size_t>(optionIndex)].label.c_str();
+    case DialogDropdownKind::PropertyContainer:
+        return ContainerDisplayName(ALL_PROPERTY_CONTAINERS[optionIndex]);
+    case DialogDropdownKind::TypeKind:
+        return KindDisplayName(KIND_ORDER[optionIndex]);
+    case DialogDropdownKind::LoadType:
+        return UserTypeRegistry::GetAll()[static_cast<std::size_t>(optionIndex)].name.c_str();
     }
     return "";
 }
@@ -158,7 +195,8 @@ static void DrawPinRows(NVGcontext* vg, const ClassEditorDialog& dialog)
 
         DrawButton(vg, dialog.PinDirectionRect(i),
                    pin.direction == PinDirection::Input ? "In" : "Out", false);
-        DrawDropdownButton(vg, dialog.PinTypeRect(i), PinTypeDisplayName(pin.type), true);
+        const std::string pinTypeLabel = TypeCellLabel(pin.type, pin.typeName);
+        DrawDropdownButton(vg, dialog.PinTypeRect(i), pinTypeLabel.c_str(), true);
 
         const bool focused = dialog.GetFocus() == ClassEditorDialog::Focus::PinName
                           && dialog.GetFocusedPinIndex() == i;
@@ -176,12 +214,13 @@ static void DrawPropertyRows(NVGcontext* vg, const ClassEditorDialog& dialog)
 
         DrawDropdownButton(vg, dialog.PropertyContainerRect(i),
                            ContainerDisplayName(property.container), true);
-        DrawDropdownButton(vg, dialog.PropertyTypeRect(i),
-                           PinTypeDisplayName(property.type), true);
+        const std::string propTypeLabel = TypeCellLabel(property.type, property.typeName);
+        DrawDropdownButton(vg, dialog.PropertyTypeRect(i), propTypeLabel.c_str(), true);
 
         const bool isMap = property.container == PropertyContainer::Map;
+        const std::string keyTypeLabel = TypeCellLabel(property.keyType, property.keyTypeName);
         DrawDropdownButton(vg, dialog.PropertyKeyTypeRect(i),
-                           isMap ? PinTypeDisplayName(property.keyType) : "-", isMap);
+                           isMap ? keyTypeLabel.c_str() : "-", isMap);
 
         const bool nameFocused = dialog.GetFocus() == ClassEditorDialog::Focus::PropertyName
                               && dialog.GetFocusedPropertyIndex() == i;
@@ -240,6 +279,69 @@ static void DrawOpenDropdown(NVGcontext* vg, const ClassEditorDialog& dialog)
     }
 }
 
+static void DrawTab(NVGcontext* vg, const UIRect& rect, const char* label, bool active)
+{
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, 3.0f * UI_SCALE);
+    nvgFillColor(vg, active ? nvgRGB(50, 90, 160) : nvgRGB(36, 36, 40));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGB(70, 70, 78));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    nvgFontFace(vg, FONT_REGULAR);
+    nvgFontSize(vg, DIALOG_FONT_SIZE);
+    nvgFillColor(vg, active ? nvgRGB(235, 235, 240) : nvgRGB(160, 160, 168));
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(vg, rect.x + rect.w * 0.5f, rect.y + rect.h * 0.5f, label, nullptr);
+}
+
+static void DrawTabs(NVGcontext* vg, const ClassEditorDialog& dialog)
+{
+    DrawTab(vg, dialog.TabClassRect(), "Node Class",
+            dialog.GetMode() == DialogEditMode::Class);
+    DrawTab(vg, dialog.TabTypeRect(), "Type", dialog.GetMode() == DialogEditMode::Type);
+}
+
+static void DrawTypeModeContent(NVGcontext* vg, const ClassEditorDialog& dialog, float x)
+{
+    const UIRect nameRect = dialog.TypeNameFieldRect();
+    DrawRowLabel(vg, x + ClassEditorDialog::PADDING, nameRect.y + nameRect.h * 0.5f, "Name");
+    DrawTextField(vg, nameRect, dialog.GetTypeNameText(), "Type name",
+                  dialog.GetFocus() == ClassEditorDialog::Focus::TypeName);
+    DrawDropdownButton(vg, dialog.LoadTypeRect(), "Load", true);
+
+    const UIRect kindRect = dialog.TypeKindRect();
+    DrawRowLabel(vg, x + ClassEditorDialog::PADDING, kindRect.y + kindRect.h * 0.5f, "Kind");
+    DrawDropdownButton(vg, kindRect, KindDisplayName(dialog.GetTypeKind()), true);
+
+    if (dialog.GetTypeKind() == UserTypeKind::Enum) {
+        DrawRowLabel(vg, x + ClassEditorDialog::PADDING, dialog.EnumValuesLabelCenterY(), "Values");
+        const std::vector<std::string>& values = dialog.GetEnumValues();
+        for (int i = 0; i < static_cast<int>(values.size()); ++i) {
+            const bool focused = dialog.GetFocus() == ClassEditorDialog::Focus::EnumValue
+                              && dialog.GetFocusedEnumIndex() == i;
+            DrawTextField(vg, dialog.EnumValueRect(i), values[static_cast<std::size_t>(i)],
+                          "Value", focused);
+            DrawButton(vg, dialog.EnumValueRemoveRect(i), "x", false);
+        }
+        DrawButton(vg, dialog.AddEnumValueButtonRect(), "+ Add Value", false);
+    } else if (dialog.GetTypeKind() == UserTypeKind::Struct) {
+        DrawRowLabel(vg, x + ClassEditorDialog::PADDING, dialog.EnumValuesLabelCenterY(), "Fields");
+        const std::vector<StructField>& fields = dialog.GetStructFields();
+        for (int i = 0; i < static_cast<int>(fields.size()); ++i) {
+            const StructField& field = fields[static_cast<std::size_t>(i)];
+            const bool focused = dialog.GetFocus() == ClassEditorDialog::Focus::StructFieldName
+                              && dialog.GetFocusedEnumIndex() == i;
+            DrawTextField(vg, dialog.FieldNameRect(i), field.name, "Field name", focused);
+            const std::string fieldTypeLabel = TypeCellLabel(field.type, field.typeName);
+            DrawDropdownButton(vg, dialog.FieldTypeRect(i), fieldTypeLabel.c_str(), true);
+            DrawButton(vg, dialog.EnumValueRemoveRect(i), "x", false);
+        }
+        DrawButton(vg, dialog.AddEnumValueButtonRect(), "+ Add Field", false);
+    }
+}
+
 void DrawClassEditorDialog(NVGcontext* vg, const ClassEditorDialog& dialog,
                            float screenWidth, float screenHeight)
 {
@@ -274,30 +376,38 @@ void DrawClassEditorDialog(NVGcontext* vg, const ClassEditorDialog& dialog,
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     nvgText(vg, x + ClassEditorDialog::PADDING,
             y + ClassEditorDialog::PADDING + ClassEditorDialog::TITLE_HEIGHT * 0.5f,
-            dialog.IsEditMode() ? "Edit Node Class" : "Create Node Class", nullptr);
+            dialog.IsEditMode() ? "Edit Node Class" : "Create", nullptr);
 
-    // Name row.
-    const UIRect nameRect = dialog.NameFieldRect();
-    DrawRowLabel(vg, x + ClassEditorDialog::PADDING, nameRect.y + nameRect.h * 0.5f, "Name");
-    DrawTextField(vg, nameRect, dialog.GetClassNameText(), "Class name",
-                  dialog.GetFocus() == ClassEditorDialog::Focus::ClassName);
+    DrawTabs(vg, dialog);
 
-    // Category row: editable text field plus a suggestion dropdown arrow.
-    const UIRect categoryRect = dialog.CategoryFieldRect();
-    DrawRowLabel(vg, x + ClassEditorDialog::PADDING, categoryRect.y + categoryRect.h * 0.5f, "Category");
-    DrawTextField(vg, categoryRect, dialog.GetCategoryText(), "Category",
-                  dialog.GetFocus() == ClassEditorDialog::Focus::Category);
-    DrawDropdownButton(vg, dialog.CategoryDropdownRect(), "", true);
+    if (dialog.GetMode() == DialogEditMode::Type) {
+        DrawTypeModeContent(vg, dialog, x);
+    } else {
+        // Name row.
+        const UIRect nameRect = dialog.NameFieldRect();
+        DrawRowLabel(vg, x + ClassEditorDialog::PADDING, nameRect.y + nameRect.h * 0.5f, "Name");
+        DrawTextField(vg, nameRect, dialog.GetClassNameText(), "Class name",
+                      dialog.GetFocus() == ClassEditorDialog::Focus::ClassName);
 
-    // Pins section.
-    DrawRowLabel(vg, x + ClassEditorDialog::PADDING, dialog.PinsLabelCenterY(), "Pins");
-    DrawPinRows(vg, dialog);
-    DrawButton(vg, dialog.AddPinButtonRect(), "+ Add Pin", false);
+        // Category row: editable text field plus a suggestion dropdown arrow.
+        const UIRect categoryRect = dialog.CategoryFieldRect();
+        DrawRowLabel(vg, x + ClassEditorDialog::PADDING, categoryRect.y + categoryRect.h * 0.5f,
+                     "Category");
+        DrawTextField(vg, categoryRect, dialog.GetCategoryText(), "Category",
+                      dialog.GetFocus() == ClassEditorDialog::Focus::Category);
+        DrawDropdownButton(vg, dialog.CategoryDropdownRect(), "", true);
 
-    // Properties section.
-    DrawRowLabel(vg, x + ClassEditorDialog::PADDING, dialog.PropertiesLabelCenterY(), "Properties");
-    DrawPropertyRows(vg, dialog);
-    DrawButton(vg, dialog.AddPropertyButtonRect(), "+ Add Property", false);
+        // Pins section.
+        DrawRowLabel(vg, x + ClassEditorDialog::PADDING, dialog.PinsLabelCenterY(), "Pins");
+        DrawPinRows(vg, dialog);
+        DrawButton(vg, dialog.AddPinButtonRect(), "+ Add Pin", false);
+
+        // Properties section.
+        DrawRowLabel(vg, x + ClassEditorDialog::PADDING, dialog.PropertiesLabelCenterY(),
+                     "Properties");
+        DrawPropertyRows(vg, dialog);
+        DrawButton(vg, dialog.AddPropertyButtonRect(), "+ Add Property", false);
+    }
 
     // Error line.
     const std::string& errorText = dialog.GetErrorText();
@@ -310,7 +420,10 @@ void DrawClassEditorDialog(NVGcontext* vg, const ClassEditorDialog& dialog,
                 errorText.c_str(), nullptr);
     }
 
-    DrawButton(vg, dialog.OkButtonRect(), dialog.IsEditMode() ? "Save" : "Create", true);
+    const char* okLabel = (dialog.GetMode() == DialogEditMode::Type)
+                              ? "Save Type"
+                              : (dialog.IsEditMode() ? "Save" : "Create");
+    DrawButton(vg, dialog.OkButtonRect(), okLabel, true);
     DrawButton(vg, dialog.CancelButtonRect(), "Cancel", false);
 
     // Open dropdown draws on top of everything else.

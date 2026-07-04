@@ -30,6 +30,7 @@
 #include "exec/WasmRuntime.h"
 #include "interaction/ActionMenu.h"
 #include "interaction/HitTest.h"
+#include "interaction/NodeAlign.h"
 #include "interaction/LogPanel.h"
 #include "render/LogPanelRenderer.h"
 #include "interaction/PropertyPanel.h"
@@ -86,6 +87,9 @@ struct CanvasController
     std::vector<NodeMove> dragMoves;
 
     bool rubberBanding = false;
+    // Selection to keep when a shift+rubber-band extends the current
+    // selection; empty for a plain rubber-band.
+    std::vector<NodeId> bandBaseSelection;
     float bandStartCanvasX = 0.0f;
     float bandStartCanvasY = 0.0f;
     float bandEndCanvasX = 0.0f;
@@ -126,6 +130,16 @@ struct CanvasController
             }
         }
         return false;
+    }
+
+    void DeselectNode(NodeId nodeId)
+    {
+        for (std::size_t i = 0; i < selectedNodes.size(); ++i) {
+            if (selectedNodes[i] == nodeId) {
+                selectedNodes.erase(selectedNodes.begin() + static_cast<std::ptrdiff_t>(i));
+                return;
+            }
+        }
     }
 
     void BeginNodeDrag(NodeGraph& graph)
@@ -355,6 +369,25 @@ struct CanvasController
                     }
                 }
                 if (hitNodeId != INVALID_ID) {
+                    if (event.ctrl) {
+                        // Ctrl-click toggles the node in the selection.
+                        // Deselecting does not start a drag.
+                        if (IsSelected(hitNodeId)) {
+                            DeselectNode(hitNodeId);
+                            break;
+                        }
+                        selectedNodes.push_back(hitNodeId);
+                        BeginNodeDrag(graph);
+                        break;
+                    }
+                    if (event.shift) {
+                        // Shift-click extends the selection.
+                        if (!IsSelected(hitNodeId)) {
+                            selectedNodes.push_back(hitNodeId);
+                        }
+                        BeginNodeDrag(graph);
+                        break;
+                    }
                     // Clicking an unselected node makes it the selection;
                     // dragging moves the whole selection.
                     if (!IsSelected(hitNodeId)) {
@@ -383,7 +416,14 @@ struct CanvasController
                     }
                     break;
                 }
-                selectedNodes.clear();
+                // Shift keeps the current selection and adds the banded
+                // nodes to it; a plain band replaces the selection.
+                if (event.shift) {
+                    bandBaseSelection = selectedNodes;
+                } else {
+                    bandBaseSelection.clear();
+                    selectedNodes.clear();
+                }
                 rubberBanding = true;
                 bandStartCanvasX = canvasPos.x;
                 bandStartCanvasY = canvasPos.y;
@@ -506,9 +546,15 @@ struct CanvasController
                 const Vec2 canvasPos = canvas.ScreenToCanvas(Vec2{event.x, event.y});
                 bandEndCanvasX = canvasPos.x;
                 bandEndCanvasY = canvasPos.y;
-                selectedNodes = HitTestNodesInRect(layoutCache,
-                                                   bandStartCanvasX, bandStartCanvasY,
-                                                   bandEndCanvasX, bandEndCanvasY);
+                std::vector<NodeId> banded =
+                    HitTestNodesInRect(layoutCache, bandStartCanvasX, bandStartCanvasY,
+                                       bandEndCanvasX, bandEndCanvasY);
+                selectedNodes = bandBaseSelection;
+                for (NodeId nodeId : banded) {
+                    if (!IsSelected(nodeId)) {
+                        selectedNodes.push_back(nodeId);
+                    }
+                }
             }
             lastMouseX = event.x;
             lastMouseY = event.y;
@@ -620,6 +666,22 @@ static void ProcessMenuAction(const ContextMenuAction& action, const ContextMenu
 // dialog submission and persists it to custom_nodes.json.
 static void ProcessClassEditorAction(const ClassEditorAction& action, NodeGraph& graph)
 {
+    if (action.type == ClassEditorAction::Type::SubmitType) {
+        // A rename drops the old entry (registry + file) before saving.
+        if (!action.typeEditOldName.empty() && action.typeEditOldName != action.userType.name) {
+            UserTypeRegistry::Remove(action.typeEditOldName);
+            std::string removeError;
+            if (!RemoveUserTypeFromFile("custom_nodes.json", action.typeEditOldName, removeError)) {
+                std::printf("custom_nodes.json: %s\n", removeError.c_str());
+            }
+        }
+        UserTypeRegistry::Register(action.userType);
+        std::string typeError;
+        if (!SaveUserTypeToFile("custom_nodes.json", action.userType, typeError)) {
+            std::printf("custom_nodes.json: %s\n", typeError.c_str());
+        }
+        return;
+    }
     if (action.type != ClassEditorAction::Type::Submit) {
         return;
     }
@@ -1254,6 +1316,73 @@ static void PasteClipboardAt(const GraphClipboard& clipboard, float canvasX, flo
     }
 }
 
+// Node action menu. Copy/Delete are always present; a multi-node
+// selection also gets an "Align" item at index NODE_MENU_BASE_ITEMS whose
+// hover submenu lists the alignment ops (parallel to AlignOp).
+static constexpr int NODE_MENU_BASE_ITEMS = 2;
+static const char* const ALIGN_MENU_LABELS[] = {
+    "Align Left",
+    "Align Center",
+    "Align Right",
+    "Align Top",
+    "Align Middle",
+    "Align Bottom",
+    "Distribute Horizontally",
+    "Distribute Vertically",
+    "Straighten Connections",
+};
+static constexpr int ALIGN_OP_COUNT =
+    static_cast<int>(sizeof(ALIGN_MENU_LABELS) / sizeof(ALIGN_MENU_LABELS[0]));
+
+static std::vector<std::string> BuildNodeActionMenuItems(bool withAlign)
+{
+    std::vector<std::string> items = {"Copy", "Delete"};
+    if (withAlign) {
+        items.push_back("Align");
+    }
+    return items;
+}
+
+// Submenu index of "Auto Layout", appended after the align ops.
+static constexpr int ALIGN_AUTO_LAYOUT_INDEX = ALIGN_OP_COUNT;
+
+static std::vector<std::string> BuildAlignSubmenuItems()
+{
+    std::vector<std::string> items;
+    for (int i = 0; i < ALIGN_OP_COUNT; ++i) {
+        items.push_back(ALIGN_MENU_LABELS[i]);
+    }
+    items.push_back("Auto Layout");
+    return items;
+}
+
+static void ApplyAlign(AlignOp op, const std::vector<NodeId>& selectedNodes, NodeGraph& graph,
+                       const NodeLayoutCache& layoutCache, UndoStack& undoStack)
+{
+    std::vector<NodeMove> moves = ComputeAlignMoves(op, selectedNodes, graph, layoutCache);
+    if (!moves.empty()) {
+        undoStack.Execute(std::make_unique<MoveNodesCommand>(std::move(moves)), graph);
+    }
+}
+
+static void ApplyAutoLayout(const std::vector<NodeId>& nodeIds, NodeGraph& graph,
+                            const NodeLayoutCache& layoutCache, UndoStack& undoStack)
+{
+    std::vector<NodeMove> moves = ComputeAutoLayoutMoves(nodeIds, graph, layoutCache);
+    if (!moves.empty()) {
+        undoStack.Execute(std::make_unique<MoveNodesCommand>(std::move(moves)), graph);
+    }
+}
+
+static std::vector<NodeId> AllNodeIds(const NodeGraph& graph)
+{
+    std::vector<NodeId> ids;
+    for (const Node& node : graph.GetNodes()) {
+        ids.push_back(node.id);
+    }
+    return ids;
+}
+
 // Parses a property-panel edit and applies it as an undoable command.
 static void ApplyPropertyPanelAction(const PropertyPanelAction& action, const Node& node,
                                      NodeGraph& graph, UndoStack& undoStack)
@@ -1264,6 +1393,28 @@ static void ApplyPropertyPanelAction(const PropertyPanelAction& action, const No
     }
     const PropertyDef& def =
         node.nodeClass->GetProperties()[static_cast<std::size_t>(action.propertyIndex)];
+
+    if (action.fieldIndex >= 0) {
+        // Struct field edit: parse the text as the field's own type.
+        const UserType* structType = UserTypeRegistry::Find(def.typeName);
+        if (structType == nullptr
+            || action.fieldIndex >= static_cast<int>(structType->fields.size())) {
+            return;
+        }
+        const StructField& field =
+            structType->fields[static_cast<std::size_t>(action.fieldIndex)];
+        PropertyValue fieldValue;
+        if (!ParseValueString(action.text, field.type, fieldValue.scalar)) {
+            std::printf("property '%s.%s': invalid value\n", def.name.c_str(),
+                        field.name.c_str());
+            return;
+        }
+        undoStack.Execute(
+            std::make_unique<SetNodePropertyCommand>(node.id, action.propertyIndex,
+                                                     std::move(fieldValue), action.fieldIndex),
+            graph);
+        return;
+    }
 
     PropertyValue newValue;
     std::string error;
@@ -1603,7 +1754,16 @@ int main(int argc, char** argv)
                         } else {
                             targetIds.push_back(actionTargetNodeId);
                         }
-                        if (result.itemIndex == 0) {
+                        if (result.submenuParent >= 0) {
+                            if (result.submenuIndex >= 0 && result.submenuIndex < ALIGN_OP_COUNT) {
+                                ApplyAlign(static_cast<AlignOp>(result.submenuIndex),
+                                           controller.selectedNodes, doc.graph, layoutCache,
+                                           doc.undoStack);
+                            } else if (result.submenuIndex == ALIGN_AUTO_LAYOUT_INDEX) {
+                                ApplyAutoLayout(controller.selectedNodes, doc.graph, layoutCache,
+                                                doc.undoStack);
+                            }
+                        } else if (result.itemIndex == 0) {
                             clipboard = CopyNodesToClipboard(doc.graph, targetIds);
                         } else if (result.itemIndex == 1) {
                             doc.undoStack.Execute(
@@ -1631,6 +1791,8 @@ int main(int argc, char** argv)
                                      controller.selectedNodes);
                 } else if (action.type == ContextMenuAction::Type::OpenFunctionEditor) {
                     functionEditor.Open(screenWidth, screenHeight);
+                } else if (action.type == ContextMenuAction::Type::ArrangeNodes) {
+                    ApplyAutoLayout(AllNodeIds(doc.graph), doc.graph, layoutCache, doc.undoStack);
                 } else {
                     ProcessMenuAction(action, contextMenu, doc.graph, doc.undoStack,
                                       classDialog, screenWidth, screenHeight,
@@ -1764,6 +1926,11 @@ int main(int argc, char** argv)
                                      doc.graph, doc.undoStack, controller.selectedNodes);
                     continue;
                 }
+                if (event.key == EditorKey::StraightenConnections) {
+                    ApplyAlign(AlignOp::Straighten, controller.selectedNodes, doc.graph,
+                               layoutCache, doc.undoStack);
+                    continue;
+                }
             }
 
             // Double-clicking a node opens its class in the editor.
@@ -1794,8 +1961,21 @@ int main(int argc, char** argv)
                 if (hitNodeId != INVALID_ID) {
                     actionTargetNodeId = hitNodeId;
                     actionTargetCommentId = INVALID_ID;
-                    actionMenu.Open(event.x, event.y, {"Copy", "Delete"},
-                                    screenWidth, screenHeight);
+                    const bool multiSelected =
+                        controller.IsSelected(hitNodeId) && controller.selectedNodes.size() >= 2;
+                    std::vector<int> separators;
+                    if (multiSelected) {
+                        // Divider between the base actions and "Align".
+                        separators = {NODE_MENU_BASE_ITEMS - 1};
+                    }
+                    actionMenu.Open(event.x, event.y, BuildNodeActionMenuItems(multiSelected),
+                                    screenWidth, screenHeight, std::move(separators));
+                    if (multiSelected) {
+                        // Submenu dividers: X align | Y align | distribute |
+                        // straighten | auto layout (AlignOp order).
+                        actionMenu.SetSubmenu(NODE_MENU_BASE_ITEMS, BuildAlignSubmenuItems(),
+                                              {2, 5, 7, 8});
+                    }
                     continue;
                 }
                 const CommentId hitCommentId =

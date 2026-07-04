@@ -1,6 +1,8 @@
 #include "GraphSerializer.h"
 #include "NodeClass.h"
 #include "NodeGraph.h"
+#include "PropertyText.h"
+#include "UserType.h"
 
 #include <nlohmann/json.hpp>
 
@@ -61,10 +63,48 @@ static bool JsonToValue(const json& valueJson, PinType type, Value& outValue)
     return false;
 }
 
+// A struct property value serializes as a JSON object keyed by field name;
+// fields may nest structs recursively.
+static json StructValueToJson(const UserType& structType,
+                              const std::vector<PropertyValue>& fields)
+{
+    json object = json::object();
+    for (std::size_t i = 0; i < structType.fields.size(); ++i) {
+        const StructField& fieldDef = structType.fields[i];
+        const PropertyValue empty;
+        const PropertyValue& fieldValue = (i < fields.size()) ? fields[i] : empty;
+        const UserType* nested = (fieldDef.type == PinType::UserType)
+                                     ? UserTypeRegistry::Find(fieldDef.typeName)
+                                     : nullptr;
+        if (nested != nullptr && nested->kind == UserTypeKind::Struct) {
+            object[fieldDef.name] = StructValueToJson(*nested, fieldValue.structFields);
+        } else {
+            object[fieldDef.name] = ValueToJson(fieldValue.scalar);
+        }
+    }
+    return object;
+}
+
+// True when a scalar (container None) property holds a user struct value.
+static const UserType* StructTypeOfProperty(const PropertyDef& def)
+{
+    if (def.container != PropertyContainer::None || def.type != PinType::UserType) {
+        return nullptr;
+    }
+    const UserType* userType = UserTypeRegistry::Find(def.typeName);
+    if (userType != nullptr && userType->kind == UserTypeKind::Struct) {
+        return userType;
+    }
+    return nullptr;
+}
+
 static json PropertyValueToJson(const PropertyDef& def, const PropertyValue& value)
 {
     switch (def.container) {
     case PropertyContainer::None:
+        if (const UserType* structType = StructTypeOfProperty(def)) {
+            return StructValueToJson(*structType, value.structFields);
+        }
         return ValueToJson(value.scalar);
     case PropertyContainer::Array:
     case PropertyContainer::Set: {
@@ -85,6 +125,33 @@ static json PropertyValueToJson(const PropertyDef& def, const PropertyValue& val
     return json();
 }
 
+static bool JsonToStructValue(const UserType& structType, const json& valueJson,
+                              std::vector<PropertyValue>& outFields)
+{
+    if (!valueJson.is_object()) {
+        return false;
+    }
+    outFields.clear();
+    for (const StructField& fieldDef : structType.fields) {
+        PropertyValue fieldValue;
+        const bool present = valueJson.contains(fieldDef.name);
+        const UserType* nested = (fieldDef.type == PinType::UserType)
+                                     ? UserTypeRegistry::Find(fieldDef.typeName)
+                                     : nullptr;
+        if (nested != nullptr && nested->kind == UserTypeKind::Struct) {
+            if (present) {
+                JsonToStructValue(*nested, valueJson[fieldDef.name], fieldValue.structFields);
+            }
+        } else if (present) {
+            JsonToValue(valueJson[fieldDef.name], fieldDef.type, fieldValue.scalar);
+        } else {
+            fieldValue.scalar = MakeDefaultValue(fieldDef.type);
+        }
+        outFields.push_back(std::move(fieldValue));
+    }
+    return true;
+}
+
 // Parses one serialized property value according to the class property
 // definition; falls back to the class default on mismatch.
 static bool JsonToPropertyValue(const json& valueJson, const PropertyDef& def,
@@ -92,6 +159,9 @@ static bool JsonToPropertyValue(const json& valueJson, const PropertyDef& def,
 {
     switch (def.container) {
     case PropertyContainer::None:
+        if (const UserType* structType = StructTypeOfProperty(def)) {
+            return JsonToStructValue(*structType, valueJson, outValue.structFields);
+        }
         return JsonToValue(valueJson, def.type, outValue.scalar);
 
     case PropertyContainer::Array:
@@ -147,10 +217,7 @@ bool SaveGraphToFile(const NodeGraph& graph, const std::string& path, std::strin
         const std::vector<PropertyDef>& defs = node.nodeClass->GetProperties();
         json propertyArray = json::array();
         for (std::size_t i = 0; i < defs.size(); ++i) {
-            PropertyValue fallback;
-            fallback.scalar = defs[i].defaultValue;
-            fallback.elements = defs[i].defaultElements;
-            fallback.entries = defs[i].defaultEntries;
+            const PropertyValue fallback = MakeDefaultPropertyValue(defs[i]);
             const PropertyValue& value =
                 (i < node.propertyValues.size()) ? node.propertyValues[i] : fallback;
             propertyArray.push_back(PropertyValueToJson(defs[i], value));

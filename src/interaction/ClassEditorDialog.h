@@ -6,6 +6,7 @@
 
 #include "model/GraphTypes.h"
 #include "model/NodeClass.h"
+#include "model/UserType.h"
 
 #include <string>
 #include <vector>
@@ -15,9 +16,11 @@ struct ClassEditorAction
     enum class Type
     {
         None,
-        // Validated submission; the dialog has closed itself and the
-        // fields below carry the new class definition.
+        // Validated class submission; the fields below carry the new
+        // class definition.
         Submit,
+        // Validated user-type submission; the type* fields carry it.
+        SubmitType,
         // Dialog cancelled/closed without creating anything.
         Closed,
     };
@@ -29,6 +32,11 @@ struct ClassEditorAction
     std::vector<PropertyDef> properties;
     // Non-null when this submission edits an existing class.
     const NodeClass* editTarget = nullptr;
+
+    // SubmitType payload.
+    UserType userType;
+    // Previous name when a type edit renames it (empty for a new type).
+    std::string typeEditOldName;
 };
 
 // Editable property row: the default value is kept as raw text while
@@ -41,6 +49,18 @@ struct PropertyDraft
     PinType keyType = PinType::String;
     std::string name;
     std::string defaultText;
+    std::string typeName;
+    std::string keyTypeName;
+};
+
+// One selectable entry of a type dropdown: a builtin PinType or a user
+// type (type == PinType::UserType, typeName set). label is the display
+// text (builtin keyword or the user type name).
+struct TypeOption
+{
+    PinType type = PinType::Float;
+    std::string typeName;
+    std::string label;
 };
 
 // Which dropdown is open, if any. Row-scoped kinds use a row index.
@@ -52,6 +72,16 @@ enum class DialogDropdownKind
     PropertyContainer,
     PropertyType,
     PropertyKeyType,
+    TypeKind,
+    FieldType,
+    LoadType,
+};
+
+// Whether the dialog is authoring a node class or a user-defined type.
+enum class DialogEditMode
+{
+    Class,
+    Type,
 };
 
 // Modal dialog for registering a custom NodeClass at runtime: class name
@@ -69,6 +99,7 @@ public:
     static constexpr float GAP = 8.0f * UI_SCALE;
     static constexpr float LABEL_WIDTH = 80.0f * UI_SCALE;
     static constexpr float SECTION_LABEL_HEIGHT = 20.0f * UI_SCALE;
+    static constexpr float TAB_HEIGHT = 24.0f * UI_SCALE;
     static constexpr float PIN_ROW_STRIDE = 30.0f * UI_SCALE;
     static constexpr float ERROR_HEIGHT = 18.0f * UI_SCALE;
     static constexpr float BUTTON_WIDTH = 96.0f * UI_SCALE;
@@ -82,6 +113,9 @@ public:
         PinName,
         PropertyName,
         PropertyDefault,
+        TypeName,
+        EnumValue,
+        StructFieldName,
     };
 
     bool IsOpen() const { return open; }
@@ -93,6 +127,12 @@ public:
     void Close();
 
     bool IsEditMode() const { return editTarget != nullptr; }
+    DialogEditMode GetMode() const { return mode; }
+    const std::string& GetTypeNameText() const { return typeNameText; }
+    UserTypeKind GetTypeKind() const { return typeKind; }
+    const std::vector<std::string>& GetEnumValues() const { return enumValues; }
+    const std::vector<StructField>& GetStructFields() const { return structFields; }
+    int GetFocusedEnumIndex() const { return focusedEnumIndex; }
 
     // Handles one input event while open; the dialog consumes all events.
     ClassEditorAction HandleEvent(const EditorInputEvent& event);
@@ -106,6 +146,9 @@ public:
     const std::vector<std::string>& GetCategoryOptions() const { return categoryOptions; }
     const std::vector<PinDef>& GetPins() const { return pins; }
     const std::vector<PropertyDraft>& GetProperties() const { return properties; }
+    // Entries of the currently open type dropdown (PinType/PropertyType/
+    // PropertyKeyType); empty for other dropdown kinds.
+    const std::vector<TypeOption>& GetTypeOptions() const { return typeOptions; }
     Focus GetFocus() const { return focus; }
     int GetFocusedPinIndex() const { return focusedPinIndex; }
     int GetFocusedPropertyIndex() const { return focusedPropertyIndex; }
@@ -120,6 +163,21 @@ public:
     UIRect DropdownAnchorRect() const;
     UIRect DropdownListRect() const;
     UIRect DropdownOptionRect(int optionIndex) const;
+
+    // Mode tabs (always visible below the title).
+    UIRect TabClassRect() const;
+    UIRect TabTypeRect() const;
+
+    // Type-mode layout rects.
+    UIRect TypeNameFieldRect() const;
+    UIRect LoadTypeRect() const;
+    UIRect TypeKindRect() const;
+    float EnumValuesLabelCenterY() const;
+    UIRect EnumValueRect(int valueIndex) const;
+    UIRect EnumValueRemoveRect(int valueIndex) const;
+    UIRect AddEnumValueButtonRect() const;
+    UIRect FieldNameRect(int fieldIndex) const;
+    UIRect FieldTypeRect(int fieldIndex) const;
 
     // Layout rects shared by hit testing and the renderer.
     UIRect NameFieldRect() const;
@@ -145,6 +203,16 @@ public:
     UIRect CancelButtonRect() const;
 
 private:
+    float TabsRowY() const;
+    float ContentTopY() const;
+    float TypeNameRowY() const;
+    float TypeKindRowY() const;
+    float EnumValuesLabelY() const;
+    float EnumValueRowY(int valueIndex) const;
+    float AddEnumValueRowY() const;
+    float TypeButtonRowY() const;
+    // Member rows shown in Type mode: enum values, struct fields, or none.
+    int TypeMemberCount() const;
     float NameRowY() const;
     float CategoryRowY() const;
     float PinsLabelY() const;
@@ -161,15 +229,27 @@ private:
     void ApplyDropdownSelection(int optionIndex);
     bool HandleDropdownMouseDown(float x, float y);
     void HandleMouseDown(float x, float y);
+    void HandleTypeModeMouseDown(float x, float y);
+    void SwitchMode(DialogEditMode newMode);
+    void LoadExistingType(int registryIndex);
     void AppendText(const char* text);
     void HandleBackspace();
     ClassEditorAction TrySubmit();
+    ClassEditorAction TrySubmitType();
 
     bool open = false;
     float panelX = 0.0f;
     float panelY = 0.0f;
+    DialogEditMode mode = DialogEditMode::Class;
+    std::string typeNameText;
+    UserTypeKind typeKind = UserTypeKind::Enum;
+    std::vector<std::string> enumValues;
+    std::vector<StructField> structFields;
+    int focusedEnumIndex = -1;
+    std::string typeEditOldName;
     std::string categoryText;
     std::vector<std::string> categoryOptions;
+    std::vector<TypeOption> typeOptions;
     std::string classNameText;
     std::vector<PinDef> pins;
     std::vector<PropertyDraft> properties;

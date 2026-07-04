@@ -55,6 +55,10 @@ enum class PinType
     Float,
     String,
     Object,
+    // References a user-defined type (enum/struct/object alias). The
+    // concrete type is named by a companion typeName string on the pin,
+    // pin def or property; look it up in UserTypeRegistry.
+    UserType,
 };
 
 enum class PinDirection
@@ -194,6 +198,8 @@ inline const char* PinTypeToString(PinType type)
         return "string";
     case PinType::Object:
         return "object";
+    case PinType::UserType:
+        return "usertype";
     }
     return "";
 }
@@ -223,6 +229,8 @@ inline bool PinTypeFromString(const std::string& text, PinType& outType)
         outType = PinType::String;
     } else if (lower == "object") {
         outType = PinType::Object;
+    } else if (lower == "usertype") {
+        outType = PinType::UserType;
     } else {
         return false;
     }
@@ -242,6 +250,10 @@ inline Value MakeDefaultValue(PinType type)
         return Value(0.0);
     case PinType::String:
         return Value(std::string());
+    case PinType::UserType:
+        // Enum values map to their enumerator index; struct/object alias
+        // have no runtime value yet and fall back to 0.
+        return Value(0);
     case PinType::Exec:
     case PinType::Object:
         break;
@@ -268,6 +280,7 @@ inline bool ParseValueString(const std::string& text, PinType type, Value& outVa
             return true;
         }
         return false;
+    case PinType::UserType:
     case PinType::Int: {
         char* end = nullptr;
         const long parsed = std::strtol(text.c_str(), &end, 10);

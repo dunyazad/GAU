@@ -34,7 +34,7 @@ void DrawLinks(NVGcontext* vg, const NodeGraph& graph, const NodeLayoutCache& la
         if (fromPin == nullptr || toPin == nullptr) {
             continue;
         }
-        const NVGcolor color = PinColorForType(fromPin->type);
+        const NVGcolor color = PinColorForType(fromPin->type, fromPin->typeName);
         const float width = LinkWidthForType(fromPin->type);
 
         // Curve through the reroute waypoints, one bezier per segment.
@@ -65,9 +65,9 @@ void DrawDraggingLink(NVGcontext* vg, const NodeLayoutCache& layoutCache,
     }
     if (pin->direction == PinDirection::Output) {
         DrawLinkCurve(vg, pin->x, pin->y, toCanvasX, toCanvasY,
-                      PinColorForType(pin->type), LinkWidthForType(pin->type));
+                      PinColorForType(pin->type, pin->typeName), LinkWidthForType(pin->type));
     } else {
         DrawLinkCurve(vg, toCanvasX, toCanvasY, pin->x, pin->y,
-                      PinColorForType(pin->type), LinkWidthForType(pin->type));
+                      PinColorForType(pin->type, pin->typeName), LinkWidthForType(pin->type));
     }
 }

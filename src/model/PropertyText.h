@@ -12,3 +12,8 @@ std::string PropertyValueToText(const PropertyDef& def, const PropertyValue& val
 // container/type. Returns false and sets outError on malformed input.
 bool ParsePropertyValueText(const PropertyDef& def, const std::string& text,
                             PropertyValue& outValue, std::string& outError);
+
+// Builds the default instance value for a property definition: scalar/
+// container defaults from the def, or a struct value with each field set
+// to its type default when the property type is a user struct.
+PropertyValue MakeDefaultPropertyValue(const PropertyDef& def);

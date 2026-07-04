@@ -144,6 +144,7 @@ static void DrawMenuItems(NVGcontext* vg, const ContextMenu& menu, float x, floa
 
         if (row.kind == ContextMenuRowKind::Paste
             || row.kind == ContextMenuRowKind::AddComment
+            || row.kind == ContextMenuRowKind::ArrangeNodes
             || row.kind == ContextMenuRowKind::CreateNewClass
             || row.kind == ContextMenuRowKind::NewWasmFunction) {
             // Separator above the first special row.
@@ -165,6 +166,8 @@ static void DrawMenuItems(NVGcontext* vg, const ContextMenu& menu, float x, floa
                 label = "Paste";
             } else if (row.kind == ContextMenuRowKind::AddComment) {
                 label = "+ Add Comment";
+            } else if (row.kind == ContextMenuRowKind::ArrangeNodes) {
+                label = "Arrange All Nodes";
             } else if (row.kind == ContextMenuRowKind::NewWasmFunction) {
                 label = "+ New Wasm Function...";
             }

@@ -3,10 +3,12 @@
 #include "interaction/PropertyPanel.h"
 #include "model/NodeGraph.h"
 #include "model/PropertyText.h"
+#include "model/UserType.h"
 
 #include <nanovg.h>
 
 #include <string>
+#include <variant>
 
 static const char* FONT_REGULAR = "sans";
 static const char* FONT_BOLD = "sans-bold";
@@ -25,6 +27,38 @@ static const char* ContainerTag(PropertyContainer container)
         return " {:}";
     }
     return "";
+}
+
+// Display text of one struct field value: enumerator name for enum fields,
+// "{...}" for nested structs, else the scalar text.
+static std::string StructFieldValueText(const PropertyDef& def, const PropertyValue& propValue,
+                                        int fieldIndex)
+{
+    const UserType* structType = UserTypeRegistry::Find(def.typeName);
+    if (structType == nullptr || fieldIndex >= static_cast<int>(structType->fields.size())) {
+        return "";
+    }
+    const StructField& field = structType->fields[static_cast<std::size_t>(fieldIndex)];
+    const PropertyValue empty;
+    const PropertyValue& fieldValue =
+        (fieldIndex < static_cast<int>(propValue.structFields.size()))
+            ? propValue.structFields[static_cast<std::size_t>(fieldIndex)]
+            : empty;
+    if (field.type == PinType::UserType) {
+        const UserType* fieldType = UserTypeRegistry::Find(field.typeName);
+        if (fieldType != nullptr && fieldType->kind == UserTypeKind::Struct) {
+            return "{...}";
+        }
+        if (fieldType != nullptr && fieldType->kind == UserTypeKind::Enum) {
+            const int* index = std::get_if<int>(&fieldValue.scalar);
+            if (index != nullptr && *index >= 0
+                && *index < static_cast<int>(fieldType->enumerators.size())) {
+                return fieldType->enumerators[static_cast<std::size_t>(*index)];
+            }
+            return "0";
+        }
+    }
+    return ValueToString(fieldValue.scalar);
 }
 
 void DrawPropertyPanel(NVGcontext* vg, const PropertyPanel& panel, const Node& node,
@@ -74,23 +108,45 @@ void DrawPropertyPanel(NVGcontext* vg, const PropertyPanel& panel, const Node& n
         return;
     }
 
-    for (int i = 0; i < static_cast<int>(defs.size()); ++i) {
-        const PropertyDef& def = defs[static_cast<std::size_t>(i)];
-        const UIRect field = panel.FieldRect(i, screenWidth);
+    const std::vector<PropertyRow> rows = panel.BuildRows(&node);
+    for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+        const PropertyRow& row = rows[static_cast<std::size_t>(r)];
+        const PropertyDef& def = defs[static_cast<std::size_t>(row.propertyIndex)];
+        const PropertyValue empty;
+        const PropertyValue& propValue =
+            (row.propertyIndex < static_cast<int>(node.propertyValues.size()))
+                ? node.propertyValues[static_cast<std::size_t>(row.propertyIndex)]
+                : empty;
+        const UIRect field = panel.FieldRectForDepth(r, row.depth, screenWidth);
+        const float labelX = rect.x + PropertyPanel::PADDING
+                           + static_cast<float>(row.depth) * 12.0f * UI_SCALE;
 
         // Label.
         nvgFillColor(vg, nvgRGB(170, 170, 178));
         nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         nvgSave(vg);
-        nvgIntersectScissor(vg, rect.x + PropertyPanel::PADDING, field.y,
-                            PropertyPanel::LABEL_WIDTH - 4.0f * UI_SCALE, field.h);
-        const std::string label = def.name + ContainerTag(def.container);
-        nvgText(vg, rect.x + PropertyPanel::PADDING, field.y + field.h * 0.5f,
-                label.c_str(), nullptr);
+        nvgIntersectScissor(vg, labelX, field.y, PropertyPanel::LABEL_WIDTH - 4.0f * UI_SCALE,
+                            field.h);
+        std::string label;
+        if (row.fieldIndex >= 0) {
+            const UserType* structType = UserTypeRegistry::Find(def.typeName);
+            if (structType != nullptr
+                && row.fieldIndex < static_cast<int>(structType->fields.size())) {
+                label = structType->fields[static_cast<std::size_t>(row.fieldIndex)].name;
+            }
+        } else {
+            label = def.name + ContainerTag(def.container);
+        }
+        nvgText(vg, labelX, field.y + field.h * 0.5f, label.c_str(), nullptr);
         nvgRestore(vg);
 
-        // Field.
-        const bool focused = (panel.GetFocusedProperty() == i);
+        if (row.isHeader) {
+            // Struct header: name only, no editable field box.
+            continue;
+        }
+
+        const bool focused = panel.GetFocusedProperty() == row.propertyIndex
+                          && panel.GetFocusedField() == row.fieldIndex;
         nvgBeginPath(vg);
         nvgRoundedRect(vg, field.x, field.y, field.w, field.h, 3.0f * UI_SCALE);
         nvgFillColor(vg, nvgRGB(15, 15, 17));
@@ -99,16 +155,18 @@ void DrawPropertyPanel(NVGcontext* vg, const PropertyPanel& panel, const Node& n
         nvgStrokeWidth(vg, 1.0f);
         nvgStroke(vg);
 
-        const PropertyValue& value = (i < static_cast<int>(node.propertyValues.size()))
-                                         ? node.propertyValues[static_cast<std::size_t>(i)]
-                                         : PropertyValue();
-        const std::string shown = focused ? panel.GetEditText() + "|"
-                                          : PropertyValueToText(def, value);
+        std::string shown;
+        if (focused) {
+            shown = panel.GetEditText() + "|";
+        } else if (row.fieldIndex >= 0) {
+            shown = StructFieldValueText(def, propValue, row.fieldIndex);
+        } else {
+            shown = PropertyValueToText(def, propValue);
+        }
         nvgSave(vg);
         nvgIntersectScissor(vg, field.x, field.y, field.w, field.h);
         nvgFillColor(vg, nvgRGB(235, 235, 240));
-        nvgText(vg, field.x + 6.0f * UI_SCALE, field.y + field.h * 0.5f,
-                shown.c_str(), nullptr);
+        nvgText(vg, field.x + 6.0f * UI_SCALE, field.y + field.h * 0.5f, shown.c_str(), nullptr);
         nvgRestore(vg);
     }
 }

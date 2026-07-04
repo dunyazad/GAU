@@ -42,6 +42,7 @@ enum class EditorKey
     Cut,
     Paste,
     SelectAll,
+    StraightenConnections,
 };
 
 struct EditorInputEvent

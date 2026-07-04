@@ -147,6 +147,10 @@ ContextMenuAction ContextMenu::HandleEvent(const EditorInputEvent& event)
                     action.type = ContextMenuAction::Type::AddComment;
                     Close();
                     break;
+                case ContextMenuRowKind::ArrangeNodes:
+                    action.type = ContextMenuAction::Type::ArrangeNodes;
+                    Close();
+                    break;
                 case ContextMenuRowKind::CreateNewClass:
                     action.type = ContextMenuAction::Type::OpenClassEditor;
                     Close();
@@ -263,6 +267,10 @@ void ContextMenu::UpdateFilter()
     ContextMenuRow addCommentRow;
     addCommentRow.kind = ContextMenuRowKind::AddComment;
     rows.push_back(addCommentRow);
+
+    ContextMenuRow arrangeRow;
+    arrangeRow.kind = ContextMenuRowKind::ArrangeNodes;
+    rows.push_back(arrangeRow);
 
     ContextMenuRow createNewRow;
     createNewRow.kind = ContextMenuRowKind::CreateNewClass;

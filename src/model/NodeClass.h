@@ -12,6 +12,8 @@ struct PinDef
     PinDirection direction = PinDirection::Input;
     PinType type = PinType::Exec;
     std::string name;
+    // Names the referenced user type when type == PinType::UserType.
+    std::string typeName;
 };
 
 // Class-level property definition (analogue of a UPROPERTY): a typed
@@ -34,6 +36,10 @@ struct PropertyDef
     std::vector<Value> defaultElements;
     // Defaults for Map.
     std::vector<std::pair<Value, Value>> defaultEntries;
+    // User type name when type == PinType::UserType.
+    std::string typeName;
+    // User type name when keyType == PinType::UserType.
+    std::string keyTypeName;
 };
 
 // Per-node-instance storage for one property, mirroring PropertyDef's
@@ -43,6 +49,10 @@ struct PropertyValue
     Value scalar;
     std::vector<Value> elements;
     std::vector<std::pair<Value, Value>> entries;
+    // Field values (parallel to the struct type's fields) when the
+    // property type is a user struct; each field is itself a PropertyValue
+    // so structs may nest.
+    std::vector<PropertyValue> structFields;
 };
 
 // Runtime meta-object describing a node type (analogue of UE's UClass).

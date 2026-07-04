@@ -176,6 +176,7 @@ NodeLayout ComputeNodeLayout(NVGcontext* vg, const Node& node,
         pinLayout.pinId = pin.id;
         pinLayout.direction = PinDirection::Input;
         pinLayout.type = pin.type;
+        pinLayout.typeName = pin.typeName;
         pinLayout.x = node.x + NODE_PIN_INSET;
         pinLayout.y = node.y + PinRowCenterY(row);
         layout.pins.push_back(pinLayout);
@@ -186,6 +187,7 @@ NodeLayout ComputeNodeLayout(NVGcontext* vg, const Node& node,
         pinLayout.pinId = pin.id;
         pinLayout.direction = PinDirection::Output;
         pinLayout.type = pin.type;
+        pinLayout.typeName = pin.typeName;
         pinLayout.x = node.x + layout.width - NODE_PIN_INSET;
         pinLayout.y = node.y + PinRowCenterY(row);
         layout.pins.push_back(pinLayout);
@@ -214,9 +216,10 @@ static void DrawExecPin(NVGcontext* vg, float cx, float cy, bool connected)
     }
 }
 
-static void DrawDataPin(NVGcontext* vg, float cx, float cy, PinType type, bool connected)
+static void DrawDataPin(NVGcontext* vg, float cx, float cy, PinType type,
+                        const std::string& typeName, bool connected)
 {
-    const NVGcolor color = PinColorForType(type);
+    const NVGcolor color = PinColorForType(type, typeName);
 
     nvgBeginPath(vg);
     nvgCircle(vg, cx, cy, DATA_PIN_RADIUS);
@@ -310,7 +313,8 @@ void DrawNode(NVGcontext* vg, const Node& node, const NodeLayout& layout, bool s
         if (pinLayout.type == PinType::Exec) {
             DrawExecPin(vg, pinLayout.x, pinLayout.y, pinLayout.connected);
         } else {
-            DrawDataPin(vg, pinLayout.x, pinLayout.y, pinLayout.type, pinLayout.connected);
+            DrawDataPin(vg, pinLayout.x, pinLayout.y, pinLayout.type, pinLayout.typeName,
+                        pinLayout.connected);
         }
         const Pin* pin = FindPinInNode(node, pinLayout.pinId);
         if (pin != nullptr) {

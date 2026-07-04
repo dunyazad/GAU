@@ -33,6 +33,9 @@ struct ContextMenuAction
         // "+ New Wasm Function..." was chosen; the caller opens the
         // wasm function editor.
         OpenFunctionEditor,
+        // "Arrange All Nodes" was chosen; the caller auto-lays out the
+        // whole graph.
+        ArrangeNodes,
     };
 
     Type type = Type::None;
@@ -46,6 +49,7 @@ enum class ContextMenuRowKind
     NodeItem,
     Paste,
     AddComment,
+    ArrangeNodes,
     CreateNewClass,
     NewWasmFunction,
 };

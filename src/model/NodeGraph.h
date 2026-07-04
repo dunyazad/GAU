@@ -12,6 +12,8 @@ struct Pin
     NodeId nodeId = INVALID_ID;
     PinDirection direction = PinDirection::Input;
     PinType type = PinType::Exec;
+    // Names the referenced user type when type == PinType::UserType.
+    std::string typeName;
     std::string name;
 };
 

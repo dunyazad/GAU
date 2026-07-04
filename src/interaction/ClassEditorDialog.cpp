@@ -1,5 +1,7 @@
 #include "ClassEditorDialog.h"
 
+#include "model/UserType.h"
+
 #include <cctype>
 
 static const std::size_t MAX_CLASS_NAME_LENGTH = 48;
@@ -92,6 +94,13 @@ void ClassEditorDialog::Open(float screenWidth, float screenHeight)
 {
     open = true;
     editTarget = nullptr;
+    mode = DialogEditMode::Class;
+    typeNameText.clear();
+    typeKind = UserTypeKind::Enum;
+    enumValues.clear();
+    structFields.clear();
+    focusedEnumIndex = -1;
+    typeEditOldName.clear();
     categoryText = "Function";
     classNameText.clear();
     pins.clear();
@@ -165,7 +174,9 @@ void ClassEditorDialog::OpenForEdit(const NodeClass& target, float screenWidth, 
         PropertyDraft draft;
         draft.container = def.container;
         draft.type = def.type;
+        draft.typeName = def.typeName;
         draft.keyType = def.keyType;
+        draft.keyTypeName = def.keyTypeName;
         draft.name = def.name;
         draft.defaultText = BuildDefaultText(def);
         properties.push_back(std::move(draft));
@@ -182,6 +193,12 @@ void ClassEditorDialog::Close()
 {
     open = false;
     editTarget = nullptr;
+    mode = DialogEditMode::Class;
+    typeNameText.clear();
+    enumValues.clear();
+    structFields.clear();
+    focusedEnumIndex = -1;
+    typeEditOldName.clear();
     classNameText.clear();
     pins.clear();
     properties.clear();
@@ -194,7 +211,19 @@ void ClassEditorDialog::Close()
 
 float ClassEditorDialog::GetPanelHeight() const
 {
-    return PADDING + TITLE_HEIGHT + GAP
+    const float header = PADDING + TITLE_HEIGHT + GAP + TAB_HEIGHT + GAP;
+    if (mode == DialogEditMode::Type) {
+        return header
+             + ROW_HEIGHT + GAP
+             + ROW_HEIGHT + GAP
+             + SECTION_LABEL_HEIGHT
+             + PIN_ROW_STRIDE * static_cast<float>(TypeMemberCount())
+             + GAP + BUTTON_HEIGHT
+             + GAP + ERROR_HEIGHT
+             + GAP + BUTTON_HEIGHT
+             + PADDING;
+    }
+    return header
          + ROW_HEIGHT + GAP
          + ROW_HEIGHT + GAP
          + SECTION_LABEL_HEIGHT
@@ -208,9 +237,61 @@ float ClassEditorDialog::GetPanelHeight() const
          + PADDING;
 }
 
-float ClassEditorDialog::NameRowY() const
+float ClassEditorDialog::TabsRowY() const
 {
     return panelY + PADDING + TITLE_HEIGHT + GAP;
+}
+
+float ClassEditorDialog::ContentTopY() const
+{
+    return TabsRowY() + TAB_HEIGHT + GAP;
+}
+
+float ClassEditorDialog::TypeNameRowY() const
+{
+    return ContentTopY();
+}
+
+float ClassEditorDialog::TypeKindRowY() const
+{
+    return TypeNameRowY() + ROW_HEIGHT + GAP;
+}
+
+float ClassEditorDialog::EnumValuesLabelY() const
+{
+    return TypeKindRowY() + ROW_HEIGHT + GAP;
+}
+
+float ClassEditorDialog::EnumValueRowY(int valueIndex) const
+{
+    return EnumValuesLabelY() + SECTION_LABEL_HEIGHT
+         + PIN_ROW_STRIDE * static_cast<float>(valueIndex);
+}
+
+int ClassEditorDialog::TypeMemberCount() const
+{
+    if (typeKind == UserTypeKind::Enum) {
+        return static_cast<int>(enumValues.size());
+    }
+    if (typeKind == UserTypeKind::Struct) {
+        return static_cast<int>(structFields.size());
+    }
+    return 0;
+}
+
+float ClassEditorDialog::AddEnumValueRowY() const
+{
+    return EnumValueRowY(TypeMemberCount()) + GAP;
+}
+
+float ClassEditorDialog::TypeButtonRowY() const
+{
+    return AddEnumValueRowY() + BUTTON_HEIGHT + GAP + ERROR_HEIGHT + GAP;
+}
+
+float ClassEditorDialog::NameRowY() const
+{
+    return ContentTopY();
 }
 
 float ClassEditorDialog::CategoryRowY() const
@@ -262,6 +343,9 @@ float ClassEditorDialog::AddPropertyRowY() const
 
 float ClassEditorDialog::ErrorRowY() const
 {
+    if (mode == DialogEditMode::Type) {
+        return AddEnumValueRowY() + BUTTON_HEIGHT + GAP;
+    }
     return AddPropertyRowY() + BUTTON_HEIGHT + GAP;
 }
 
@@ -273,6 +357,70 @@ float ClassEditorDialog::ErrorCenterY() const
 float ClassEditorDialog::ButtonRowY() const
 {
     return ErrorRowY() + ERROR_HEIGHT + GAP;
+}
+
+UIRect ClassEditorDialog::TabClassRect() const
+{
+    const float tabWidth = (WIDTH - PADDING * 2.0f - GAP) * 0.5f;
+    return UIRect{panelX + PADDING, TabsRowY(), tabWidth, TAB_HEIGHT};
+}
+
+UIRect ClassEditorDialog::TabTypeRect() const
+{
+    const float tabWidth = (WIDTH - PADDING * 2.0f - GAP) * 0.5f;
+    return UIRect{panelX + PADDING + tabWidth + GAP, TabsRowY(), tabWidth, TAB_HEIGHT};
+}
+
+UIRect ClassEditorDialog::TypeNameFieldRect() const
+{
+    const float loadWidth = 72.0f * UI_SCALE;
+    return UIRect{panelX + PADDING + LABEL_WIDTH, TypeNameRowY(),
+                  WIDTH - PADDING * 2.0f - LABEL_WIDTH - loadWidth - GAP, ROW_HEIGHT};
+}
+
+UIRect ClassEditorDialog::LoadTypeRect() const
+{
+    const float loadWidth = 72.0f * UI_SCALE;
+    return UIRect{panelX + WIDTH - PADDING - loadWidth, TypeNameRowY(), loadWidth, ROW_HEIGHT};
+}
+
+UIRect ClassEditorDialog::TypeKindRect() const
+{
+    return UIRect{panelX + PADDING + LABEL_WIDTH, TypeKindRowY(), 120.0f * UI_SCALE, ROW_HEIGHT};
+}
+
+float ClassEditorDialog::EnumValuesLabelCenterY() const
+{
+    return EnumValuesLabelY() + SECTION_LABEL_HEIGHT * 0.5f;
+}
+
+UIRect ClassEditorDialog::EnumValueRect(int valueIndex) const
+{
+    const float left = panelX + PADDING;
+    const float right = panelX + WIDTH - PADDING - 28.0f * UI_SCALE;
+    return UIRect{left, EnumValueRowY(valueIndex), right - left, ROW_HEIGHT};
+}
+
+UIRect ClassEditorDialog::EnumValueRemoveRect(int valueIndex) const
+{
+    return UIRect{panelX + WIDTH - PADDING - 22.0f * UI_SCALE, EnumValueRowY(valueIndex),
+                  22.0f * UI_SCALE, ROW_HEIGHT};
+}
+
+UIRect ClassEditorDialog::AddEnumValueButtonRect() const
+{
+    return UIRect{panelX + PADDING, AddEnumValueRowY(), 110.0f * UI_SCALE, BUTTON_HEIGHT};
+}
+
+UIRect ClassEditorDialog::FieldNameRect(int fieldIndex) const
+{
+    return UIRect{panelX + PADDING, EnumValueRowY(fieldIndex), 110.0f * UI_SCALE, ROW_HEIGHT};
+}
+
+UIRect ClassEditorDialog::FieldTypeRect(int fieldIndex) const
+{
+    return UIRect{panelX + PADDING + 118.0f * UI_SCALE, EnumValueRowY(fieldIndex),
+                  90.0f * UI_SCALE, ROW_HEIGHT};
 }
 
 UIRect ClassEditorDialog::NameFieldRect() const
@@ -381,14 +529,43 @@ int ClassEditorDialog::GetDropdownOptionCount() const
     case DialogDropdownKind::Category:
         return static_cast<int>(categoryOptions.size());
     case DialogDropdownKind::PinType:
-        return PIN_TYPE_COUNT;
+        return static_cast<int>(typeOptions.size());
     case DialogDropdownKind::PropertyContainer:
         return PROPERTY_CONTAINER_COUNT;
     case DialogDropdownKind::PropertyType:
     case DialogDropdownKind::PropertyKeyType:
-        return VALUE_PIN_TYPE_COUNT;
+        return static_cast<int>(typeOptions.size());
+    case DialogDropdownKind::TypeKind:
+        return 3;
+    case DialogDropdownKind::FieldType:
+        return static_cast<int>(typeOptions.size());
+    case DialogDropdownKind::LoadType:
+        return static_cast<int>(UserTypeRegistry::GetAll().size());
     }
     return 0;
+}
+
+// User type kinds in dropdown order.
+static const UserTypeKind TYPE_KIND_ORDER[3] = {
+    UserTypeKind::Enum,
+    UserTypeKind::Struct,
+    UserTypeKind::ObjectAlias,
+};
+
+// Index of the option in typeOptions matching a (type, typeName) pair.
+static int FindTypeOption(const std::vector<TypeOption>& options, PinType type,
+                          const std::string& typeName)
+{
+    for (int i = 0; i < static_cast<int>(options.size()); ++i) {
+        if (options[static_cast<std::size_t>(i)].type != type) {
+            continue;
+        }
+        if (type != PinType::UserType
+            || options[static_cast<std::size_t>(i)].typeName == typeName) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 int ClassEditorDialog::GetDropdownSelectedIndex() const
@@ -405,12 +582,8 @@ int ClassEditorDialog::GetDropdownSelectedIndex() const
         return -1;
     case DialogDropdownKind::PinType:
         if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(pins.size())) {
-            const PinType type = pins[static_cast<std::size_t>(dropdownRowIndex)].type;
-            for (int i = 0; i < PIN_TYPE_COUNT; ++i) {
-                if (ALL_PIN_TYPES[i] == type) {
-                    return i;
-                }
-            }
+            const PinDef& pin = pins[static_cast<std::size_t>(dropdownRowIndex)];
+            return FindTypeOption(typeOptions, pin.type, pin.typeName);
         }
         return -1;
     case DialogDropdownKind::PropertyContainer:
@@ -421,13 +594,30 @@ int ClassEditorDialog::GetDropdownSelectedIndex() const
         return -1;
     case DialogDropdownKind::PropertyType:
         if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(properties.size())) {
-            return ValuePinTypeIndex(properties[static_cast<std::size_t>(dropdownRowIndex)].type);
+            const PropertyDraft& property = properties[static_cast<std::size_t>(dropdownRowIndex)];
+            return FindTypeOption(typeOptions, property.type, property.typeName);
         }
         return -1;
     case DialogDropdownKind::PropertyKeyType:
         if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(properties.size())) {
-            return ValuePinTypeIndex(properties[static_cast<std::size_t>(dropdownRowIndex)].keyType);
+            const PropertyDraft& property = properties[static_cast<std::size_t>(dropdownRowIndex)];
+            return FindTypeOption(typeOptions, property.keyType, property.keyTypeName);
         }
+        return -1;
+    case DialogDropdownKind::TypeKind:
+        for (int i = 0; i < 3; ++i) {
+            if (TYPE_KIND_ORDER[i] == typeKind) {
+                return i;
+            }
+        }
+        return -1;
+    case DialogDropdownKind::FieldType:
+        if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(structFields.size())) {
+            const StructField& field = structFields[static_cast<std::size_t>(dropdownRowIndex)];
+            return FindTypeOption(typeOptions, field.type, field.typeName);
+        }
+        return -1;
+    case DialogDropdownKind::LoadType:
         return -1;
     }
     return -1;
@@ -451,6 +641,12 @@ UIRect ClassEditorDialog::DropdownAnchorRect() const
         return PropertyTypeRect(dropdownRowIndex);
     case DialogDropdownKind::PropertyKeyType:
         return PropertyKeyTypeRect(dropdownRowIndex);
+    case DialogDropdownKind::TypeKind:
+        return TypeKindRect();
+    case DialogDropdownKind::FieldType:
+        return FieldTypeRect(dropdownRowIndex);
+    case DialogDropdownKind::LoadType:
+        return LoadTypeRect();
     }
     return UIRect();
 }
@@ -470,11 +666,78 @@ UIRect ClassEditorDialog::DropdownOptionRect(int optionIndex) const
                   list.w, ROW_HEIGHT};
 }
 
+// Capitalized display name matching the type dropdown rows.
+static const char* BuiltinTypeLabel(PinType type)
+{
+    switch (type) {
+    case PinType::Exec:
+        return "Exec";
+    case PinType::Bool:
+        return "Bool";
+    case PinType::Int:
+        return "Int";
+    case PinType::Float:
+        return "Float";
+    case PinType::String:
+        return "String";
+    case PinType::Object:
+        return "Object";
+    case PinType::UserType:
+        return "";
+    }
+    return "";
+}
+
+// Fills typeOptions with the builtin types followed by the matching user
+// types. excludeObjectAlias drops object-alias user types (used where a
+// value is required: property element/key types accept enums and structs,
+// but not opaque object aliases).
+static void BuildTypeOptions(std::vector<TypeOption>& out, const PinType* builtins,
+                             int builtinCount, bool excludeObjectAlias)
+{
+    out.clear();
+    for (int i = 0; i < builtinCount; ++i) {
+        TypeOption option;
+        option.type = builtins[i];
+        option.label = BuiltinTypeLabel(builtins[i]);
+        out.push_back(std::move(option));
+    }
+    for (const UserType& userType : UserTypeRegistry::GetAll()) {
+        if (excludeObjectAlias && userType.kind == UserTypeKind::ObjectAlias) {
+            continue;
+        }
+        TypeOption option;
+        option.type = PinType::UserType;
+        option.typeName = userType.name;
+        option.label = userType.name;
+        out.push_back(std::move(option));
+    }
+}
+
+// Builtin types offered for a struct field (any value type or object, but
+// not Exec).
+static const PinType FIELD_BUILTIN_TYPES[5] = {
+    PinType::Bool,
+    PinType::Int,
+    PinType::Float,
+    PinType::String,
+    PinType::Object,
+};
+
 void ClassEditorDialog::OpenDropdown(DialogDropdownKind kind, int rowIndex)
 {
     dropdownKind = kind;
     dropdownRowIndex = rowIndex;
     dropdownHoverIndex = -1;
+
+    if (kind == DialogDropdownKind::PinType) {
+        BuildTypeOptions(typeOptions, ALL_PIN_TYPES, PIN_TYPE_COUNT, false);
+    } else if (kind == DialogDropdownKind::PropertyType
+               || kind == DialogDropdownKind::PropertyKeyType) {
+        BuildTypeOptions(typeOptions, VALUE_PIN_TYPES, VALUE_PIN_TYPE_COUNT, true);
+    } else if (kind == DialogDropdownKind::FieldType) {
+        BuildTypeOptions(typeOptions, FIELD_BUILTIN_TYPES, 5, false);
+    }
 
     if (kind == DialogDropdownKind::Category) {
         // Suggestions: builtin names first, then user-defined categories
@@ -516,8 +779,11 @@ void ClassEditorDialog::ApplyDropdownSelection(int optionIndex)
         }
         break;
     case DialogDropdownKind::PinType:
-        if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(pins.size())) {
-            pins[static_cast<std::size_t>(dropdownRowIndex)].type = ALL_PIN_TYPES[optionIndex];
+        if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(pins.size())
+            && optionIndex >= 0 && optionIndex < static_cast<int>(typeOptions.size())) {
+            PinDef& pin = pins[static_cast<std::size_t>(dropdownRowIndex)];
+            pin.type = typeOptions[static_cast<std::size_t>(optionIndex)].type;
+            pin.typeName = typeOptions[static_cast<std::size_t>(optionIndex)].typeName;
         }
         break;
     case DialogDropdownKind::PropertyContainer:
@@ -527,16 +793,36 @@ void ClassEditorDialog::ApplyDropdownSelection(int optionIndex)
         }
         break;
     case DialogDropdownKind::PropertyType:
-        if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(properties.size())) {
-            properties[static_cast<std::size_t>(dropdownRowIndex)].type =
-                VALUE_PIN_TYPES[optionIndex];
+        if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(properties.size())
+            && optionIndex >= 0 && optionIndex < static_cast<int>(typeOptions.size())) {
+            PropertyDraft& property = properties[static_cast<std::size_t>(dropdownRowIndex)];
+            property.type = typeOptions[static_cast<std::size_t>(optionIndex)].type;
+            property.typeName = typeOptions[static_cast<std::size_t>(optionIndex)].typeName;
         }
         break;
     case DialogDropdownKind::PropertyKeyType:
-        if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(properties.size())) {
-            properties[static_cast<std::size_t>(dropdownRowIndex)].keyType =
-                VALUE_PIN_TYPES[optionIndex];
+        if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(properties.size())
+            && optionIndex >= 0 && optionIndex < static_cast<int>(typeOptions.size())) {
+            PropertyDraft& property = properties[static_cast<std::size_t>(dropdownRowIndex)];
+            property.keyType = typeOptions[static_cast<std::size_t>(optionIndex)].type;
+            property.keyTypeName = typeOptions[static_cast<std::size_t>(optionIndex)].typeName;
         }
+        break;
+    case DialogDropdownKind::TypeKind:
+        if (optionIndex >= 0 && optionIndex < 3) {
+            typeKind = TYPE_KIND_ORDER[optionIndex];
+        }
+        break;
+    case DialogDropdownKind::FieldType:
+        if (dropdownRowIndex >= 0 && dropdownRowIndex < static_cast<int>(structFields.size())
+            && optionIndex >= 0 && optionIndex < static_cast<int>(typeOptions.size())) {
+            StructField& field = structFields[static_cast<std::size_t>(dropdownRowIndex)];
+            field.type = typeOptions[static_cast<std::size_t>(optionIndex)].type;
+            field.typeName = typeOptions[static_cast<std::size_t>(optionIndex)].typeName;
+        }
+        break;
+    case DialogDropdownKind::LoadType:
+        LoadExistingType(optionIndex);
         break;
     }
 }
@@ -582,15 +868,27 @@ ClassEditorAction ClassEditorDialog::HandleEvent(const EditorInputEvent& event)
             if (HandleDropdownMouseDown(event.x, event.y)) {
                 break;
             }
+            if (TabClassRect().Contains(event.x, event.y)) {
+                SwitchMode(DialogEditMode::Class);
+                break;
+            }
+            if (TabTypeRect().Contains(event.x, event.y)) {
+                SwitchMode(DialogEditMode::Type);
+                break;
+            }
             if (OkButtonRect().Contains(event.x, event.y)) {
-                return TrySubmit();
+                return mode == DialogEditMode::Type ? TrySubmitType() : TrySubmit();
             }
             if (CancelButtonRect().Contains(event.x, event.y)) {
                 Close();
                 action.type = ClassEditorAction::Type::Closed;
                 return action;
             }
-            HandleMouseDown(event.x, event.y);
+            if (mode == DialogEditMode::Type) {
+                HandleTypeModeMouseDown(event.x, event.y);
+            } else {
+                HandleMouseDown(event.x, event.y);
+            }
         }
         break;
 
@@ -604,7 +902,7 @@ ClassEditorAction ClassEditorDialog::HandleEvent(const EditorInputEvent& event)
             }
         } else if (event.key == EditorKey::Enter) {
             if (dropdownKind == DialogDropdownKind::None) {
-                return TrySubmit();
+                return mode == DialogEditMode::Type ? TrySubmitType() : TrySubmit();
             }
         } else if (event.key == EditorKey::Backspace) {
             HandleBackspace();
@@ -735,8 +1033,134 @@ void ClassEditorDialog::HandleMouseDown(float x, float y)
     focusedPropertyIndex = -1;
 }
 
+void ClassEditorDialog::LoadExistingType(int registryIndex)
+{
+    const std::vector<UserType>& all = UserTypeRegistry::GetAll();
+    if (registryIndex < 0 || registryIndex >= static_cast<int>(all.size())) {
+        return;
+    }
+    const UserType& type = all[static_cast<std::size_t>(registryIndex)];
+    typeNameText = type.name;
+    typeKind = type.kind;
+    enumValues = type.enumerators;
+    structFields = type.fields;
+    typeEditOldName = type.name;
+    focus = Focus::None;
+    focusedEnumIndex = -1;
+    errorText.clear();
+}
+
+void ClassEditorDialog::SwitchMode(DialogEditMode newMode)
+{
+    if (mode == newMode) {
+        return;
+    }
+    mode = newMode;
+    focus = Focus::None;
+    focusedPinIndex = -1;
+    focusedPropertyIndex = -1;
+    focusedEnumIndex = -1;
+    errorText.clear();
+    CloseDropdown();
+    if (mode == DialogEditMode::Type && enumValues.empty()) {
+        enumValues.push_back(std::string());
+    }
+}
+
+void ClassEditorDialog::HandleTypeModeMouseDown(float x, float y)
+{
+    if (TypeNameFieldRect().Contains(x, y)) {
+        focus = Focus::TypeName;
+        focusedEnumIndex = -1;
+        return;
+    }
+    if (LoadTypeRect().Contains(x, y)) {
+        OpenDropdown(DialogDropdownKind::LoadType, -1);
+        return;
+    }
+    if (TypeKindRect().Contains(x, y)) {
+        OpenDropdown(DialogDropdownKind::TypeKind, -1);
+        return;
+    }
+
+    if (typeKind == UserTypeKind::Enum) {
+        for (int i = 0; i < static_cast<int>(enumValues.size()); ++i) {
+            if (EnumValueRect(i).Contains(x, y)) {
+                focus = Focus::EnumValue;
+                focusedEnumIndex = i;
+                return;
+            }
+            if (EnumValueRemoveRect(i).Contains(x, y)) {
+                enumValues.erase(enumValues.begin() + i);
+                if (focus == Focus::EnumValue) {
+                    focus = Focus::None;
+                    focusedEnumIndex = -1;
+                }
+                return;
+            }
+        }
+        if (AddEnumValueButtonRect().Contains(x, y)) {
+            enumValues.push_back(std::string());
+            return;
+        }
+    } else if (typeKind == UserTypeKind::Struct) {
+        for (int i = 0; i < static_cast<int>(structFields.size()); ++i) {
+            if (FieldNameRect(i).Contains(x, y)) {
+                focus = Focus::StructFieldName;
+                focusedEnumIndex = i;
+                return;
+            }
+            if (FieldTypeRect(i).Contains(x, y)) {
+                OpenDropdown(DialogDropdownKind::FieldType, i);
+                return;
+            }
+            if (EnumValueRemoveRect(i).Contains(x, y)) {
+                structFields.erase(structFields.begin() + i);
+                if (focus == Focus::StructFieldName) {
+                    focus = Focus::None;
+                    focusedEnumIndex = -1;
+                }
+                return;
+            }
+        }
+        if (AddEnumValueButtonRect().Contains(x, y)) {
+            StructField field;
+            field.type = PinType::Float;
+            structFields.push_back(std::move(field));
+            return;
+        }
+    }
+
+    focus = Focus::None;
+    focusedEnumIndex = -1;
+}
+
 void ClassEditorDialog::AppendText(const char* text)
 {
+    if (focus == Focus::TypeName) {
+        if (typeNameText.size() < MAX_CLASS_NAME_LENGTH) {
+            typeNameText += text;
+        }
+        return;
+    }
+    if (focus == Focus::EnumValue
+        && focusedEnumIndex >= 0
+        && focusedEnumIndex < static_cast<int>(enumValues.size())) {
+        std::string& value = enumValues[static_cast<std::size_t>(focusedEnumIndex)];
+        if (value.size() < MAX_PIN_NAME_LENGTH) {
+            value += text;
+        }
+        return;
+    }
+    if (focus == Focus::StructFieldName
+        && focusedEnumIndex >= 0
+        && focusedEnumIndex < static_cast<int>(structFields.size())) {
+        std::string& name = structFields[static_cast<std::size_t>(focusedEnumIndex)].name;
+        if (name.size() < MAX_PIN_NAME_LENGTH) {
+            name += text;
+        }
+        return;
+    }
     if (focus == Focus::ClassName) {
         if (classNameText.size() < MAX_CLASS_NAME_LENGTH) {
             classNameText += text;
@@ -772,6 +1196,22 @@ void ClassEditorDialog::AppendText(const char* text)
 
 void ClassEditorDialog::HandleBackspace()
 {
+    if (focus == Focus::TypeName) {
+        PopLastUTF8Character(typeNameText);
+        return;
+    }
+    if (focus == Focus::EnumValue
+        && focusedEnumIndex >= 0
+        && focusedEnumIndex < static_cast<int>(enumValues.size())) {
+        PopLastUTF8Character(enumValues[static_cast<std::size_t>(focusedEnumIndex)]);
+        return;
+    }
+    if (focus == Focus::StructFieldName
+        && focusedEnumIndex >= 0
+        && focusedEnumIndex < static_cast<int>(structFields.size())) {
+        PopLastUTF8Character(structFields[static_cast<std::size_t>(focusedEnumIndex)].name);
+        return;
+    }
     if (focus == Focus::ClassName) {
         PopLastUTF8Character(classNameText);
         return;
@@ -805,10 +1245,26 @@ static bool ConvertPropertyDraft(const PropertyDraft& draft, PropertyDef& outDef
     outDef.name = TrimAscii(draft.name);
     outDef.container = draft.container;
     outDef.type = draft.type;
+    outDef.typeName = draft.typeName;
     outDef.keyType = draft.keyType;
+    outDef.keyTypeName = draft.keyTypeName;
     if (outDef.name.empty()) {
         outError = "Property name is empty";
         return false;
+    }
+    if (outDef.type == PinType::UserType && outDef.container != PropertyContainer::None) {
+        const UserType* elementType = UserTypeRegistry::Find(outDef.typeName);
+        if (elementType != nullptr && elementType->kind == UserTypeKind::Struct) {
+            outError = "Struct type is only allowed on a scalar property: " + outDef.name;
+            return false;
+        }
+    }
+    if (outDef.container == PropertyContainer::Map && outDef.keyType == PinType::UserType) {
+        const UserType* keyType = UserTypeRegistry::Find(outDef.keyTypeName);
+        if (keyType != nullptr && keyType->kind == UserTypeKind::Struct) {
+            outError = "Struct cannot be a map key: " + outDef.name;
+            return false;
+        }
     }
 
     const std::string text = TrimAscii(draft.defaultText);
@@ -926,6 +1382,71 @@ ClassEditorAction ClassEditorDialog::TrySubmit()
     action.pins = pins;
     action.properties = std::move(propertyDefs);
     action.editTarget = editTarget;
+    Close();
+    return action;
+}
+
+ClassEditorAction ClassEditorDialog::TrySubmitType()
+{
+    ClassEditorAction action;
+
+    const std::string trimmed = TrimAscii(typeNameText);
+    if (trimmed.empty()) {
+        errorText = "Type name is empty";
+        return action;
+    }
+    PinType builtinCollision;
+    if (PinTypeFromString(trimmed, builtinCollision)) {
+        errorText = "Name collides with a builtin type";
+        return action;
+    }
+
+    UserType type;
+    type.name = trimmed;
+    type.kind = typeKind;
+    if (typeKind == UserTypeKind::Enum) {
+        for (const std::string& value : enumValues) {
+            const std::string trimmedValue = TrimAscii(value);
+            if (trimmedValue.empty()) {
+                continue;
+            }
+            for (const std::string& existing : type.enumerators) {
+                if (existing == trimmedValue) {
+                    errorText = "Duplicate enum value: " + trimmedValue;
+                    return action;
+                }
+            }
+            type.enumerators.push_back(trimmedValue);
+        }
+        if (type.enumerators.empty()) {
+            errorText = "Enum needs at least one value";
+            return action;
+        }
+    } else if (typeKind == UserTypeKind::Struct) {
+        for (const StructField& field : structFields) {
+            StructField clean = field;
+            clean.name = TrimAscii(field.name);
+            if (clean.name.empty()) {
+                errorText = "Struct field name is empty";
+                return action;
+            }
+            for (const StructField& existing : type.fields) {
+                if (existing.name == clean.name) {
+                    errorText = "Duplicate struct field: " + clean.name;
+                    return action;
+                }
+            }
+            type.fields.push_back(std::move(clean));
+        }
+        if (type.fields.empty()) {
+            errorText = "Struct needs at least one field";
+            return action;
+        }
+    }
+
+    action.type = ClassEditorAction::Type::SubmitType;
+    action.userType = std::move(type);
+    action.typeEditOldName = typeEditOldName;
     Close();
     return action;
 }

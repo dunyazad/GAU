@@ -13,6 +13,8 @@ struct PinLayout
     PinId pinId = INVALID_ID;
     PinDirection direction = PinDirection::Input;
     PinType type = PinType::Exec;
+    // User type name when type == PinType::UserType.
+    std::string typeName;
     // Pin center in canvas coordinates.
     float x = 0.0f;
     float y = 0.0f;

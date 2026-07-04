@@ -2,6 +2,7 @@
 
 #include "GraphTypes.h"
 #include "NodeClass.h"
+#include "UserType.h"
 
 #include <string>
 #include <vector>
@@ -54,3 +55,11 @@ bool UpdateNodeClassInFile(const std::string& path, const std::string& oldName,
                            const std::vector<PinDef>& pins,
                            const std::vector<PropertyDef>& properties,
                            const std::string& execFnName, std::string& outError);
+
+// Writes a user type into the file's "types" array (added or replaced by
+// name). Returns false and sets outError on failure.
+bool SaveUserTypeToFile(const std::string& path, const UserType& type, std::string& outError);
+
+// Removes a user type entry by name from the file's "types" array.
+bool RemoveUserTypeFromFile(const std::string& path, const std::string& name,
+                            std::string& outError);

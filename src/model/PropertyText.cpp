@@ -1,7 +1,10 @@
 #include "PropertyText.h"
 
+#include "UserType.h"
+
 #include <cctype>
 #include <utility>
+#include <variant>
 
 static std::string TrimAscii(const std::string& text)
 {
@@ -32,10 +35,62 @@ static std::vector<std::string> SplitTrimmed(const std::string& text, char separ
     return parts;
 }
 
+// Default instance value for a (type, typeName) pair. Structs recurse into
+// their fields; other types use their zero value.
+static PropertyValue MakeDefaultForType(PinType type, const std::string& typeName)
+{
+    PropertyValue value;
+    if (type == PinType::UserType) {
+        const UserType* userType = UserTypeRegistry::Find(typeName);
+        if (userType != nullptr && userType->kind == UserTypeKind::Struct) {
+            for (const StructField& field : userType->fields) {
+                value.structFields.push_back(MakeDefaultForType(field.type, field.typeName));
+            }
+            return value;
+        }
+    }
+    value.scalar = MakeDefaultValue(type);
+    return value;
+}
+
+PropertyValue MakeDefaultPropertyValue(const PropertyDef& def)
+{
+    PropertyValue value;
+    if (def.container == PropertyContainer::None) {
+        if (def.type == PinType::UserType) {
+            const UserType* userType = UserTypeRegistry::Find(def.typeName);
+            if (userType != nullptr && userType->kind == UserTypeKind::Struct) {
+                for (const StructField& field : userType->fields) {
+                    value.structFields.push_back(MakeDefaultForType(field.type, field.typeName));
+                }
+                return value;
+            }
+        }
+        value.scalar = def.defaultValue;
+        return value;
+    }
+    value.elements = def.defaultElements;
+    value.entries = def.defaultEntries;
+    return value;
+}
+
 std::string PropertyValueToText(const PropertyDef& def, const PropertyValue& value)
 {
     switch (def.container) {
     case PropertyContainer::None:
+        if (def.type == PinType::UserType) {
+            const UserType* userType = UserTypeRegistry::Find(def.typeName);
+            if (userType != nullptr && userType->kind == UserTypeKind::Struct) {
+                // Structs are edited field-by-field; summarize on one line.
+                return "{...}";
+            }
+            // Enum scalars display as the enumerator name for their index.
+            const int* index = std::get_if<int>(&value.scalar);
+            if (userType != nullptr && userType->kind == UserTypeKind::Enum && index != nullptr
+                && *index >= 0 && *index < static_cast<int>(userType->enumerators.size())) {
+                return userType->enumerators[static_cast<std::size_t>(*index)];
+            }
+        }
         return ValueToString(value.scalar);
 
     case PropertyContainer::Array:

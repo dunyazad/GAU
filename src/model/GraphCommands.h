@@ -145,7 +145,10 @@ private:
 class SetNodePropertyCommand : public GraphCommand
 {
 public:
-    SetNodePropertyCommand(NodeId nodeId, int propertyIndex, PropertyValue newValue);
+    // fieldIndex >= 0 sets a single struct field's scalar (from
+    // newValue.scalar); -1 replaces the whole property value.
+    SetNodePropertyCommand(NodeId nodeId, int propertyIndex, PropertyValue newValue,
+                           int fieldIndex = -1);
 
     bool Execute(NodeGraph& graph) override;
     void Undo(NodeGraph& graph) override;
@@ -153,6 +156,7 @@ public:
 private:
     NodeId nodeId;
     int propertyIndex;
+    int fieldIndex;
     PropertyValue newValue;
     PropertyValue oldValue;
 };

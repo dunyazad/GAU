@@ -1,5 +1,6 @@
 #include "NodeGraph.h"
 #include "Guid.h"
+#include "PropertyText.h"
 
 NodeId NodeGraph::AddNode(const NodeClass& nodeClass, float x, float y)
 {
@@ -13,11 +14,7 @@ NodeId NodeGraph::AddNode(const NodeClass& nodeClass, float x, float y)
         AddPin(node, pinDef);
     }
     for (const PropertyDef& propertyDef : nodeClass.GetProperties()) {
-        PropertyValue value;
-        value.scalar = propertyDef.defaultValue;
-        value.elements = propertyDef.defaultElements;
-        value.entries = propertyDef.defaultEntries;
-        node.propertyValues.push_back(std::move(value));
+        node.propertyValues.push_back(MakeDefaultPropertyValue(propertyDef));
     }
     nodes.push_back(node);
     return nodes.back().id;
@@ -30,6 +27,7 @@ void NodeGraph::AddPin(Node& node, const PinDef& pinDef)
     pin.nodeId = node.id;
     pin.direction = pinDef.direction;
     pin.type = pinDef.type;
+    pin.typeName = pinDef.typeName;
     pin.name = pinDef.name;
 
     if (pinDef.direction == PinDirection::Input) {

@@ -52,6 +52,7 @@ add_executable(gau
     src/render/ClassEditorDialogRenderer.cpp
     src/model/NodeGraph.cpp
     src/model/NodeClass.cpp
+    src/model/UserType.cpp
     src/model/BuiltinNodeClasses.cpp
     src/model/NodeClassLoader.cpp
     src/model/EditorSettings.cpp
@@ -73,6 +74,7 @@ add_executable(gau
     src/interaction/TabBar.cpp
     src/interaction/ClassEditorDialog.cpp
     src/interaction/HitTest.cpp
+    src/interaction/NodeAlign.cpp
 )
 target_include_directories(gau PRIVATE src external)
 target_link_libraries(gau PRIVATE SDL3::SDL3-static nanovg wasm3)
@@ -102,8 +104,10 @@ add_executable(serializer_tests
     src/model/NodeGraph.cpp
     src/model/Guid.cpp
     src/model/NodeClass.cpp
+    src/model/UserType.cpp
     src/model/BuiltinNodeClasses.cpp
     src/model/GraphSerializer.cpp
+    src/model/PropertyText.cpp
 )
 target_include_directories(serializer_tests PRIVATE src external)
 if(MSVC)
@@ -116,7 +120,9 @@ add_executable(exec_tests
     src/model/NodeGraph.cpp
     src/model/Guid.cpp
     src/model/NodeClass.cpp
+    src/model/UserType.cpp
     src/model/BuiltinNodeClasses.cpp
+    src/model/PropertyText.cpp
     src/exec/ExecEngine.cpp
     src/exec/BuiltinNodes.cpp
     src/exec/WasmRuntime.cpp
