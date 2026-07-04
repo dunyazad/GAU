@@ -241,12 +241,17 @@ int main()
     TypeRegistry& types = project.types;
     NodeClassRegistry& classes = project.classes;
     FunctionRegistry& functions = project.functions;
-    Graph& graph = *project.graph;
+    // The graph currently shown/edited: the main graph, or a function body
+    // when editing a function (function edit UI). Run/Debug always target the
+    // main graph. Panel callbacks capture `active` (not a fixed reference) so
+    // switching context takes effect immediately.
+    Graph* active = project.graph.get();
     BuiltinRegistry builtins;
     RegisterDemoClasses(classes, types);
     RegisterConversionNodes(classes, builtins, types);
     RegisterDemoBuiltins(builtins);
-    NodeId entry = BuildDemoGraph(graph, classes);
+    NodeId entry = BuildDemoGraph(*project.graph, classes);
+    std::string editContext = "main";
 
     render::Canvas canvas;
 
@@ -284,8 +289,8 @@ int main()
         if (sel.size() < 2) {
             return;
         }
-        history.Record(graph);
-        const render::GraphLayout layout = render::ComputeGraphLayout(graph, classes, measure);
+        history.Record(*active);
+        const render::GraphLayout layout = render::ComputeGraphLayout(*active, classes, measure);
         std::vector<NodeBox> boxes;
         for (NodeId id : sel) {
             const render::NodeLayout* nl = layout.FindNode(id);
@@ -296,7 +301,7 @@ int main()
         const std::vector<NodePos> result =
             distribute ? ComputeDistribute(boxes, horizontal) : ComputeAlign(boxes, mode);
         for (const NodePos& p : result) {
-            Node* n = graph.FindNode(p.id);
+            Node* n = active->FindNode(p.id);
             if (n != nullptr) {
                 n->x = p.x;
                 n->y = p.y;
@@ -323,7 +328,7 @@ int main()
         column->Add(std::make_unique<ui::Button>("Run",
                                                  [&runRequested]() { runRequested = true; }));
         column->Add(std::make_unique<ui::Button>("Debug", [&]() {
-            debug = std::make_unique<Runtime>(graph, types, classes, builtins, debugLog);
+            debug = std::make_unique<Runtime>(*project.graph, types, classes, builtins, debugLog);
             for (NodeId bp : breakpoints) {
                 debug->AddBreakpoint(bp);
             }
@@ -347,9 +352,9 @@ int main()
                 return;
             }
             const std::string name = "Func" + std::to_string(++funcCount);
-            history.Record(graph);
+            history.Record(*active);
             const NodeId call =
-                CollapseSelection(graph, types, classes, builtins, functions, sel, name);
+                CollapseSelection(*active, types, classes, builtins, functions, sel, name);
             if (call != INVALID_ID) {
                 fsm.ClearSelection();
                 if (rebuildPalette) {
@@ -362,8 +367,8 @@ int main()
             if (sel.empty()) {
                 return;
             }
-            history.Record(graph);
-            if (ExpandCall(graph, types, classes, functions, sel[0])) {
+            history.Record(*active);
+            if (ExpandCall(*active, types, classes, functions, sel[0])) {
                 fsm.ClearSelection();
             }
         }));
@@ -391,14 +396,36 @@ int main()
             project.comments.push_back(cm);
         }));
         column->Add(std::make_unique<ui::Button>("Undo", [&]() {
-            if (history.Undo(graph)) {
+            if (history.Undo(*active)) {
                 fsm.ClearSelection();
             }
         }));
         column->Add(std::make_unique<ui::Button>("Redo", [&]() {
-            if (history.Redo(graph)) {
+            if (history.Redo(*active)) {
                 fsm.ClearSelection();
             }
+        }));
+        // Enter a selected Call node's function body; return to the main graph.
+        column->Add(std::make_unique<ui::Button>("Edit Fn", [&]() {
+            const std::vector<NodeId>& sel = fsm.Selection();
+            if (sel.empty()) {
+                return;
+            }
+            const Node* n = active->FindNode(sel[0]);
+            FunctionDef* def = (n != nullptr) ? functions.Find(n->className) : nullptr;
+            if (def == nullptr) {
+                return;
+            }
+            active = def->body.get();
+            editContext = def->name;
+            fsm.ClearSelection();
+            history.Clear();
+        }));
+        column->Add(std::make_unique<ui::Button>("Main", [&]() {
+            active = project.graph.get();
+            editContext = "main";
+            fsm.ClearSelection();
+            history.Clear();
         }));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
@@ -429,7 +456,7 @@ int main()
             }
             column->Add(std::make_unique<ui::Button>(
                 "+ " + name,
-                [&graph, &classes, &canvas, &window, &spawnCount, &history, name]() {
+                [&active, &classes, &canvas, &window, &spawnCount, &history, name]() {
                     const NodeClass* cls = classes.Find(name);
                     if (cls == nullptr) {
                         return;
@@ -438,8 +465,8 @@ int main()
                         static_cast<float>(window.GetWidth()) * 0.5f,
                         static_cast<float>(window.GetHeight()) * 0.5f});
                     const float offset = static_cast<float>(spawnCount % 8) * 24.0f;
-                    history.Record(graph);
-                    graph.AddNode(*cls, center.x + offset, center.y + offset);
+                    history.Record(*active);
+                    active->AddNode(*cls, center.x + offset, center.y + offset);
                     ++spawnCount;
                 }));
         }
@@ -475,7 +502,7 @@ int main()
     const auto buildProperties = [&](NodeId nodeId) -> std::unique_ptr<ui::Widget> {
         auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
         auto column = std::make_unique<ui::Column>(4.0f);
-        const Node* node = graph.FindNode(nodeId);
+        const Node* node = active->FindNode(nodeId);
         const NodeClass* cls = (node != nullptr) ? classes.Find(node->className) : nullptr;
         if (node != nullptr && cls != nullptr && !node->properties.empty()) {
             column->Add(std::make_unique<ui::Label>("Properties: " + node->className));
@@ -489,11 +516,11 @@ int main()
                 row->Add(std::make_unique<ui::Label>(cls->properties[i].name));
                 row->Add(std::make_unique<ui::TextField>(
                     ValueToString(node->properties[i]),
-                    [&graph, &types, &history, recorded, nodeId, i, pt](const std::string& v) {
-                        Node* n = graph.FindNode(nodeId);
+                    [&active, &types, &history, recorded, nodeId, i, pt](const std::string& v) {
+                        Node* n = active->FindNode(nodeId);
                         if (n != nullptr && i < n->properties.size()) {
                             if (!*recorded) {
-                                history.Record(graph);
+                                history.Record(*active);
                                 *recorded = true;
                             }
                             n->properties[i] = ParseValue(types, pt, v);
@@ -520,12 +547,12 @@ int main()
         auto row = std::make_unique<ui::Row>(6.0f);
         row->Add(std::make_unique<ui::Label>("Find"));
         row->Add(std::make_unique<ui::TextField>("", [&](const std::string& query) {
-            const std::vector<NodeId> matches = SearchNodes(graph, query);
+            const std::vector<NodeId> matches = SearchNodes(*active, query);
             if (matches.empty()) {
                 return;
             }
             const render::GraphLayout layout =
-                render::ComputeGraphLayout(graph, classes, measure);
+                render::ComputeGraphLayout(*active, classes, measure);
             std::vector<NodeBox> boxes;
             for (NodeId id : matches) {
                 const render::NodeLayout* nl = layout.FindNode(id);
@@ -599,7 +626,9 @@ int main()
             std::printf("[load] %s\n", e.c_str());
         }
         rebindBehaviors();
-        entry = FindByClass(graph, "EventBegin");
+        active = project.graph.get();
+        editContext = "main";
+        entry = FindByClass(*project.graph, "EventBegin");
         fsm.ClearSelection();
         breakpoints.clear();
         shownNode = INVALID_ID;
@@ -629,7 +658,7 @@ int main()
         if (sx < panel.x || sx > panel.x + panel.w || sy < panel.y || sy > panel.y + panel.h) {
             return false;
         }
-        const render::GraphLayout lay = render::ComputeGraphLayout(graph, classes, measure);
+        const render::GraphLayout lay = render::ComputeGraphLayout(*active, classes, measure);
         std::vector<NodeBox> boxes;
         for (const render::NodeLayout& nl : lay.Nodes()) {
             boxes.push_back(NodeBox{nl.id, nl.x, nl.y, nl.w, nl.h});
@@ -667,6 +696,12 @@ int main()
         }
         const float screenW = static_cast<float>(window.GetWidth());
         const float screenH = static_cast<float>(window.GetHeight());
+
+        // The active graph this frame (main graph, or a function body while
+        // editing a function). Rebinds each iteration so context switches take
+        // effect immediately.
+        Graph& graph = *active;
+        const bool editingMain = (active == project.graph.get());
 
         // Layout from current node positions; hit testing reads it.
         const render::GraphLayout layout = render::ComputeGraphLayout(graph, classes, measure);
@@ -713,7 +748,7 @@ int main()
                 // A click inside a comment box (and not on a node) drags the
                 // comment together with the nodes it encloses.
                 CommentId hitComment = INVALID_ID;
-                if (HitTestNode(layout, cp.x, cp.y) == INVALID_ID) {
+                if (editingMain && HitTestNode(layout, cp.x, cp.y) == INVALID_ID) {
                     for (const Comment& c : project.comments) {
                         if (cp.x >= c.x && cp.x <= c.x + c.w && cp.y >= c.y
                             && cp.y <= c.y + c.h) {
@@ -814,7 +849,9 @@ int main()
 
         if (runRequested) {
             runRequested = false;
-            Runtime rt(graph, types, classes, builtins,
+            // Run always executes the main graph, regardless of what is being
+            // edited.
+            Runtime rt(*project.graph, types, classes, builtins,
                        [](const std::string& m) { std::printf("[run] %s\n", m.c_str()); });
             rt.Start(entry);
             rt.Run(10000);
@@ -822,12 +859,13 @@ int main()
 
         if (infoLabel != nullptr) {
             const std::vector<NodeId>& sel = fsm.Selection();
+            const std::string ctx = "[" + editContext + "] ";
             if (sel.empty()) {
-                infoLabel->SetText("No selection");
+                infoLabel->SetText(ctx + "No selection");
             } else {
                 const Node* first = graph.FindNode(sel[0]);
                 const std::string name = (first != nullptr) ? first->className : "";
-                infoLabel->SetText("Selected " + std::to_string(sel.size()) + ": " + name);
+                infoLabel->SetText(ctx + "Selected " + std::to_string(sel.size()) + ": " + name);
             }
         }
 
@@ -843,7 +881,9 @@ int main()
 
         window.BeginFrame(0.12f, 0.12f, 0.13f);
         nvgBeginFrame(vg, screenW, screenH, window.GetPixelRatio());
-        DrawComments(vg, canvas, project.comments);
+        if (editingMain) {
+            DrawComments(vg, canvas, project.comments);
+        }
         render::DrawGraph(vg, canvas, graph, types, layout);
         render::DrawSelection(vg, canvas, layout, fsm.Selection());
         if (fsm.IsDraggingLink()) {
