@@ -51,6 +51,7 @@ endif()
 add_library(gau_exec STATIC
     src/exec/Runtime.cpp
     src/exec/Builtins.cpp
+    src/exec/StructNodes.cpp
 )
 target_include_directories(gau_exec PUBLIC src)
 target_link_libraries(gau_exec PUBLIC gau_model gau_core)
@@ -196,6 +197,11 @@ add_executable(exec_vm_tests tests/ExecVmTests.cpp)
 target_include_directories(exec_vm_tests PRIVATE src)
 target_link_libraries(exec_vm_tests PRIVATE gau_exec)
 add_test(NAME exec_vm_tests COMMAND exec_vm_tests)
+
+add_executable(struct_nodes_tests tests/StructNodesTests.cpp)
+target_include_directories(struct_nodes_tests PRIVATE src)
+target_link_libraries(struct_nodes_tests PRIVATE gau_exec)
+add_test(NAME struct_nodes_tests COMMAND struct_nodes_tests)
 
 add_executable(ui_tests tests/UiTests.cpp)
 target_include_directories(ui_tests PRIVATE src)
