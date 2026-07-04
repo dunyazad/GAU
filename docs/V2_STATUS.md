@@ -100,11 +100,22 @@ build/Debug/gau2.exe                    # v2 앱
 - 남은 배선(minor):
   - 코멘트 텍스트 인라인 편집(현재 추가/드래그/삭제만; 편집엔 코멘트 선택 UI 필요).
 
+## v1(gau.exe) 쪽 최근 작업
+
+- **FR-WASM-4 자체 완결 툴체인 번들** — `FindClangForWasm` 이 exe 옆 `tools/llvm/bin`
+  우선 탐색(`g_appDir`=argv[0] 유도), CMake POST_BUILD 가 `wasm_src/`+`tools/` 를 exe
+  옆에 stage, `.gitignore` 가 `/tools/` 제외. 실제 clang 바이너리만 패키징서 투입하면
+  LLVM 미설치 사용자도 앱 내 빌드 가능. 문서: `docs/WASM_BUNDLING.md`.
+- **wasm 예제 소스** — `wasm_src/MakeStringFromVector3f.cpp` 를 올바른 freestanding
+  노드로 교정(Vector3f 3핀 -> string). `.wasm` 빌드는 clang 필요.
+- **FR-TYP-6 Object 노드 클래스 핀 타입** — ClassEditorDialog 핀/필드 타입 드롭다운이
+  Object 카테고리 노드 클래스도 이름 기반 오브젝트 타입으로 노출.
+
 ## 환경 제약으로 보류 (Windows 개발 환경서 검증 불가)
 
 - **FR-WASM-1~3 커스텀/Wasm 노드** — v1 의 WasmRuntime(wasm3)/ExecEngine 은 존재하나
-  v2 Runtime 에 미통합. 함수 런타임 빌드에 LLVM(clang wasm32) 필요. 배선은 가능하나
-  실행 검증 불가.
+  v2 Runtime 에 미통합. 함수 런타임 빌드에 LLVM(clang wasm32) 필요(FR-WASM-4 번들 배선은
+  완료, clang 바이너리 투입만 남음). v2 통합은 배선 가능하나 실행 검증 불가.
 - **FR-PLT-1~2 Apple/터치** (M12) — PlatformNVG 에 Metal(__APPLE__) 분기는 있으나
   .mm/ios 프로젝트 없음. macOS/Xcode/Metal 필요, Windows 서 빌드/실행 불가.
 
