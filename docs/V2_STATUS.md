@@ -22,10 +22,10 @@ build/Debug/gau2.exe                    # v2 앱
 
 - **core** — TypeRegistry(인턴 타입, enum/struct/object, 컨테이너 Array/Set/Map,
   기본값, 표시명) + 통합 Value(스칼라/enum/struct/컨테이너). `core_tests`.
-- **model** — Graph/Node/Link/NodeClassV2(레지스트리)/Function(FunctionDef +
-  FunctionRegistry)/Variable/Comment/Project + UndoHistory(그래프 스냅샷 언두/리두).
-  TypeId 핀, Value 프로퍼티, CanConnect(타입+exec 사이클). `model_tests`,
-  `undo_history_tests`.
+- **model** — Graph(AddNode/AppendPin/링크)/Node/Link/NodeClassV2(레지스트리)/
+  Function(FunctionDef + FunctionRegistry)/Variable/Comment/Project + UndoHistory(그래프
+  스냅샷 언두/리두). TypeId 핀, Value 프로퍼티, CanConnect(타입+exec 사이클).
+  `model_tests`, `undo_history_tests`.
 - **exec** — 중단 가능 Runtime(Start/Step/Continue/Run, 브레이크포인트, exec 출력
   래치, 함수 호출 파라미터/결과 마샬링, 재귀 깊이 제한, 변수 저장소, RunError 진단) +
   data pull + NodeEval/BuiltinRegistry + StructNodes(Make/Break) + FunctionNodes(함수
@@ -89,8 +89,10 @@ build/Debug/gau2.exe                    # v2 앱
   - 미니맵 클릭 뷰 네비게이션, 코멘트 드래그(포함 노드 함께 이동, 노드 이동은 언두 커버).
   - 함수 본문 편집: `Graph* active` 로 메인/함수본문 전환. Call 노드 선택 -> Edit Fn 으로
     본문(def->body) 편집, Main 으로 복귀. Run/Debug 는 항상 main. 코멘트는 main 에서만.
+  - 함수 인터페이스 편집(추가): Add In/Add Out -> AddFunctionParam 이 Entry/Return/Call
+    클래스 재생성 + 모든 인스턴스 핀 append(기존 핀/링크 보존). `function_interface_tests`.
 - 남은 배선:
-  - 함수 인터페이스 편집(입출력 파라미터 추가/삭제 -> Call/Entry/Return 클래스 재생성).
+  - 함수 파라미터 삭제(핀/링크 제거 + 재인덱스 필요), 파라미터 타입 선택(현재 int 고정).
   - 변수 삭제/타입 지정, 코멘트 편집/삭제(현재 추가/이동만).
 
 ## 환경 제약으로 보류 (Windows 개발 환경서 검증 불가)
@@ -103,12 +105,12 @@ build/Debug/gau2.exe                    # v2 앱
 
 ## 다음 세션 착수 순서 (권장)
 
-1. **함수 인터페이스 편집** — 함수 입출력 파라미터 추가/삭제 UI. FunctionDef.inputs/outputs
-   변경 시 Call/Entry/Return 클래스 재생성(RegisterFunctionNodes 재호출) + 기존 노드 핀
-   갱신 필요. 본문 편집(Edit Fn/Main)은 완료됨.
-2. **정리 항목** — 변수 삭제/타입 지정, 코멘트 편집/삭제, 언두를 그래프별 히스토리로 분리
-   (현재는 컨텍스트 전환 시 clear).
-3. (환경 갖춰지면) **FR-WASM** (LLVM 필요), **FR-PLT Apple/터치** (macOS/Xcode 필요).
+함수 편집(본문 + 파라미터 추가)까지 완료. 남은 것은 정리/폴리시 + 환경 제약 항목뿐.
+
+1. **정리/폴리시** — 함수 파라미터 삭제(핀/링크 제거 + 재인덱스), 파라미터 타입 선택(현재
+   int 고정), 변수 삭제/타입, 코멘트 편집/삭제, 언두를 그래프별 히스토리로 분리(현재 컨텍스트
+   전환 시 clear).
+2. (환경 갖춰지면) **FR-WASM** (LLVM 필요), **FR-PLT Apple/터치** (macOS/Xcode 필요).
 
 언두 관련 알려진 한계: UndoHistory 는 그래프 스냅샷만 -> collapse/expand 언두 시 그래프는
 복원되나 생성된 함수 클래스/def 는 레지스트리에 잔류(미사용 orphan). 코멘트/변수 정의는
