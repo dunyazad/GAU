@@ -58,6 +58,15 @@ if(MSVC)
     target_compile_definitions(gau_exec PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+# --- gau_ui (v2 retained UI toolkit, backend-agnostic) ---
+add_library(gau_ui STATIC
+    src/ui/Widget.cpp
+)
+target_include_directories(gau_ui PUBLIC src)
+if(MSVC)
+    target_compile_definitions(gau_ui PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- editor executable ---
 add_executable(gau
     src/main.cpp
@@ -139,6 +148,11 @@ add_executable(exec_vm_tests tests/ExecVmTests.cpp)
 target_include_directories(exec_vm_tests PRIVATE src)
 target_link_libraries(exec_vm_tests PRIVATE gau_exec)
 add_test(NAME exec_vm_tests COMMAND exec_vm_tests)
+
+add_executable(ui_tests tests/UiTests.cpp)
+target_include_directories(ui_tests PRIVATE src)
+target_link_libraries(ui_tests PRIVATE gau_ui)
+add_test(NAME ui_tests COMMAND ui_tests)
 
 add_executable(canvas_tests
     tests/CanvasTests.cpp
