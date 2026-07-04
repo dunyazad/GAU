@@ -10,6 +10,7 @@
 #include "exec/Builtins.h"
 #include "exec/FunctionOps.h"
 #include "exec/Runtime.h"
+#include "interaction/Align.h"
 #include "interaction/HitTest2.h"
 #include "interaction/InteractionFsm.h"
 #include "model/Function.h"
@@ -163,6 +164,35 @@ int main()
     InteractionFsm fsm;
     int funcCount = 0;
     std::function<void()> rebuildPalette;
+    const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
+        return painter.MeasureText(s, size);
+    };
+
+    // Applies an alignment/distribution to the selection using the current
+    // layout, then writes the new positions back to the nodes.
+    const auto applyAlign = [&](bool distribute, AlignMode mode, bool horizontal) {
+        const std::vector<NodeId>& sel = fsm.Selection();
+        if (sel.size() < 2) {
+            return;
+        }
+        const render::GraphLayout layout = render::ComputeGraphLayout(graph, classes, measure);
+        std::vector<NodeBox> boxes;
+        for (NodeId id : sel) {
+            const render::NodeLayout* nl = layout.FindNode(id);
+            if (nl != nullptr) {
+                boxes.push_back(NodeBox{id, nl->x, nl->y, nl->w, nl->h});
+            }
+        }
+        const std::vector<NodePos> result =
+            distribute ? ComputeDistribute(boxes, horizontal) : ComputeAlign(boxes, mode);
+        for (const NodePos& p : result) {
+            Node* n = graph.FindNode(p.id);
+            if (n != nullptr) {
+                n->x = p.x;
+                n->y = p.y;
+            }
+        }
+    };
 
     // Debug state: breakpoints and a persistent runtime when stepping.
     std::vector<NodeId> breakpoints;
@@ -216,6 +246,18 @@ int main()
                 }
             }
         }));
+        column->Add(std::make_unique<ui::Button>("Expand", [&]() {
+            const std::vector<NodeId>& sel = fsm.Selection();
+            if (!sel.empty() && ExpandCall(graph, types, classes, functions, sel[0])) {
+                fsm.ClearSelection();
+            }
+        }));
+        column->Add(std::make_unique<ui::Button>(
+            "Align L", [&applyAlign]() { applyAlign(false, AlignMode::Left, false); }));
+        column->Add(std::make_unique<ui::Button>(
+            "Align T", [&applyAlign]() { applyAlign(false, AlignMode::Top, false); }));
+        column->Add(std::make_unique<ui::Button>(
+            "Distribute H", [&applyAlign]() { applyAlign(true, AlignMode::Left, true); }));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{200.0f, 200.0f});
@@ -320,10 +362,6 @@ int main()
     const std::size_t propertyIndex = panels.size();
     panels.push_back(buildProperties(INVALID_ID));
     NodeId shownNode = INVALID_ID;
-
-    const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
-        return painter.MeasureText(s, size);
-    };
 
     std::vector<EditorInputEvent> events;
     bool panning = false;
