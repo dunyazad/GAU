@@ -8,6 +8,7 @@
 #include "model/Function.h"
 #include "model/Graph.h"
 #include "model/NodeClassV2.h"
+#include "model/Variable.h"
 
 #include <string>
 #include <vector>
@@ -37,5 +38,9 @@ bool ImportV1Graph(const std::string& jsonText, Graph& graph, const NodeClassReg
 void ImportFunctions(const std::string& jsonText, FunctionRegistry& functions,
                      NodeClassRegistry& classes, TypeRegistry& types,
                      std::vector<std::string>& errors);
+
+// Loads a "variables" array (name + type) into the definition list.
+void ImportVariables(const std::string& jsonText, std::vector<VariableDef>& variables,
+                     TypeRegistry& types, std::vector<std::string>& errors);
 
 } // namespace gau

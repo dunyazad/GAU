@@ -393,4 +393,26 @@ void ImportFunctions(const std::string& jsonText, FunctionRegistry& functions,
     }
 }
 
+void ImportVariables(const std::string& jsonText, std::vector<VariableDef>& variables,
+                     TypeRegistry& types, std::vector<std::string>& errors)
+{
+    const json root = json::parse(jsonText, nullptr, false);
+    if (root.is_discarded() || !root.is_object()) {
+        errors.push_back("invalid JSON");
+        return;
+    }
+    if (!root.contains("variables") || !root["variables"].is_array()) {
+        return;
+    }
+    for (const json& v : root["variables"]) {
+        if (!v.is_object() || !v.contains("name") || !v.contains("type")) {
+            continue;
+        }
+        VariableDef def;
+        def.name = v["name"].get<std::string>();
+        def.type = ResolveType(types, v["type"].get<std::string>());
+        variables.push_back(std::move(def));
+    }
+}
+
 } // namespace gau

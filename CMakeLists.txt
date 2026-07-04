@@ -165,6 +165,7 @@ endif()
 add_library(gau_io STATIC
     src/io/V1Import.cpp
     src/io/ProjectExport.cpp
+    src/io/ProjectFile.cpp
 )
 target_include_directories(gau_io PUBLIC src external)
 target_link_libraries(gau_io PUBLIC gau_model gau_core)
@@ -253,6 +254,11 @@ add_executable(function_serialize_tests tests/FunctionSerializeTests.cpp)
 target_include_directories(function_serialize_tests PRIVATE src external)
 target_link_libraries(function_serialize_tests PRIVATE gau_exec gau_io)
 add_test(NAME function_serialize_tests COMMAND function_serialize_tests)
+
+add_executable(project_file_tests tests/ProjectFileTests.cpp)
+target_include_directories(project_file_tests PRIVATE src external)
+target_link_libraries(project_file_tests PRIVATE gau_exec gau_io)
+add_test(NAME project_file_tests COMMAND project_file_tests)
 
 add_executable(interaction_tests tests/InteractionTests.cpp)
 target_include_directories(interaction_tests PRIVATE src)

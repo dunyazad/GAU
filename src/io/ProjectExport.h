@@ -10,6 +10,9 @@
 
 namespace gau {
 
+// Bumped when the on-disk shape changes in a way the loader must migrate.
+constexpr int PROJECT_SCHEMA_VERSION = 2;
+
 std::string ExportProject(const Project& project);
 
 } // namespace gau

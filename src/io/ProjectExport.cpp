@@ -248,12 +248,26 @@ static json ExportFunctions(const Project& project)
     return array;
 }
 
+static json ExportVariables(const Project& project)
+{
+    json array = json::array();
+    for (const VariableDef& v : project.variables) {
+        json entry;
+        entry["name"] = v.name;
+        entry["type"] = project.types.TypeName(v.type);
+        array.push_back(entry);
+    }
+    return array;
+}
+
 std::string ExportProject(const Project& project)
 {
     json root;
+    root["schemaVersion"] = PROJECT_SCHEMA_VERSION;
     root["types"] = ExportTypes(project.types);
     root["nodeClasses"] = ExportClasses(project.types, project.classes);
     root["functions"] = ExportFunctions(project);
+    root["variables"] = ExportVariables(project);
     const json graphJson = ExportGraphJson(*project.graph, project.types, project.classes);
     root["nodes"] = graphJson["nodes"];
     root["links"] = graphJson["links"];
