@@ -121,15 +121,67 @@ int main()
 
     render::Canvas canvas;
 
-    // Retained UI: a Run button in a top-left panel.
+    // Retained UI panels (positioned once against the initial window size).
     bool runRequested = false;
-    auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
-    auto column = std::make_unique<ui::Column>(4.0f);
-    column->Add(std::make_unique<ui::Button>("Run", [&runRequested]() { runRequested = true; }));
-    ui::Widget* panelRaw = panel.get();
-    panelRaw->Add(std::move(column));
-    const ui::Size panelSize = panelRaw->Measure(painter, ui::Size{200.0f, 200.0f});
-    panelRaw->Arrange(ui::Rect{8.0f, 8.0f, panelSize.w + 8.0f, panelSize.h + 8.0f});
+    int spawnCount = 0;
+    std::vector<std::unique_ptr<ui::Widget>> panels;
+    const float initW = static_cast<float>(window.GetWidth());
+    const float initH = static_cast<float>(window.GetHeight());
+
+    // Run panel (top-left).
+    {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
+        auto column = std::make_unique<ui::Column>(4.0f);
+        column->Add(std::make_unique<ui::Button>("Run",
+                                                 [&runRequested]() { runRequested = true; }));
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(column));
+        const ui::Size s = raw->Measure(painter, ui::Size{200.0f, 200.0f});
+        raw->Arrange(ui::Rect{8.0f, 8.0f, s.w + 8.0f, s.h + 8.0f});
+        panels.push_back(std::move(panel));
+    }
+
+    // Palette panel (top-right): one button per node class spawns a node.
+    {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
+        auto column = std::make_unique<ui::Column>(4.0f);
+        for (const NodeClass& c : classes.All()) {
+            const std::string name = c.name;
+            column->Add(std::make_unique<ui::Button>(
+                "+ " + name, [&graph, &classes, &canvas, &window, &spawnCount, name]() {
+                    const NodeClass* cls = classes.Find(name);
+                    if (cls == nullptr) {
+                        return;
+                    }
+                    const render::Vec2 center = canvas.ScreenToCanvas(render::Vec2{
+                        static_cast<float>(window.GetWidth()) * 0.5f,
+                        static_cast<float>(window.GetHeight()) * 0.5f});
+                    const float offset = static_cast<float>(spawnCount % 8) * 24.0f;
+                    graph.AddNode(*cls, center.x + offset, center.y + offset);
+                    ++spawnCount;
+                }));
+        }
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(column));
+        const ui::Size s = raw->Measure(painter, ui::Size{240.0f, 400.0f});
+        raw->Arrange(ui::Rect{initW - s.w - 16.0f, 8.0f, s.w + 8.0f, s.h + 8.0f});
+        panels.push_back(std::move(panel));
+    }
+
+    // Selection info panel (bottom-left), text updated each frame.
+    ui::Label* infoLabel = nullptr;
+    {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
+        auto column = std::make_unique<ui::Column>(4.0f);
+        auto label = std::make_unique<ui::Label>("No selection");
+        infoLabel = label.get();
+        column->Add(std::move(label));
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(column));
+        raw->Measure(painter, ui::Size{300.0f, 60.0f});
+        raw->Arrange(ui::Rect{8.0f, initH - 40.0f, 300.0f, 30.0f});
+        panels.push_back(std::move(panel));
+    }
 
     InteractionFsm fsm;
     const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
@@ -153,7 +205,14 @@ int main()
 
         for (const EditorInputEvent& e : events) {
             const ui::Event ue = Translate(e);
-            if (panelRaw->OnEvent(ue)) {
+            bool uiHandled = false;
+            for (const std::unique_ptr<ui::Widget>& p : panels) {
+                if (p->OnEvent(ue)) {
+                    uiHandled = true;
+                    break;
+                }
+            }
+            if (uiHandled) {
                 continue;
             }
             const render::Vec2 cp = canvas.ScreenToCanvas(render::Vec2{e.x, e.y});
@@ -190,6 +249,17 @@ int main()
             rt.Run(10000);
         }
 
+        if (infoLabel != nullptr) {
+            const std::vector<NodeId>& sel = fsm.Selection();
+            if (sel.empty()) {
+                infoLabel->SetText("No selection");
+            } else {
+                const Node* first = graph.FindNode(sel[0]);
+                const std::string name = (first != nullptr) ? first->className : "";
+                infoLabel->SetText("Selected " + std::to_string(sel.size()) + ": " + name);
+            }
+        }
+
         window.BeginFrame(0.12f, 0.12f, 0.13f);
         nvgBeginFrame(vg, screenW, screenH, window.GetPixelRatio());
         render::DrawGraph(vg, canvas, graph, types, layout);
@@ -197,7 +267,9 @@ int main()
         if (fsm.IsDraggingLink()) {
             render::DrawDragLink(vg, canvas, layout, fsm.DragLinkPin(), fsm.DragX(), fsm.DragY());
         }
-        panelRaw->Paint(painter);
+        for (const std::unique_ptr<ui::Widget>& p : panels) {
+            p->Paint(painter);
+        }
         nvgEndFrame(vg);
         window.EndFrame();
     }
