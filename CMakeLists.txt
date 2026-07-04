@@ -67,6 +67,19 @@ if(MSVC)
     target_compile_definitions(gau_ui PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+# --- gau_render (v2 canvas/layout + NanoVG painter) ---
+add_library(gau_render STATIC
+    src/render/RenderCanvas.cpp
+    src/render/GraphLayout.cpp
+    src/render/NanoVgPainter.cpp
+    src/render/GraphRenderer.cpp
+)
+target_include_directories(gau_render PUBLIC src)
+target_link_libraries(gau_render PUBLIC gau_model gau_core gau_ui nanovg)
+if(MSVC)
+    target_compile_definitions(gau_render PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- editor executable ---
 add_executable(gau
     src/main.cpp
@@ -153,6 +166,11 @@ add_executable(ui_tests tests/UiTests.cpp)
 target_include_directories(ui_tests PRIVATE src)
 target_link_libraries(ui_tests PRIVATE gau_ui)
 add_test(NAME ui_tests COMMAND ui_tests)
+
+add_executable(render_tests tests/RenderTests.cpp)
+target_include_directories(render_tests PRIVATE src)
+target_link_libraries(render_tests PRIVATE gau_render)
+add_test(NAME render_tests COMMAND render_tests)
 
 add_executable(canvas_tests
     tests/CanvasTests.cpp
