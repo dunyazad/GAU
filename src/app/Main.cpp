@@ -549,6 +549,39 @@ int main()
         panels.push_back(std::move(panel));
     }
 
+    // Variable panel (top-left, under Run): name field + Add makes an int
+    // variable and registers its Get/Set nodes into the palette.
+    {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
+        auto row = std::make_unique<ui::Row>(6.0f);
+        auto field = std::make_unique<ui::TextField>("var", [](const std::string&) {}, 100.0f);
+        ui::TextField* varField = field.get();
+        row->Add(std::make_unique<ui::Label>("Var"));
+        row->Add(std::move(field));
+        row->Add(std::make_unique<ui::Button>("Add", [&, varField]() {
+            const std::string name = varField->Value();
+            if (name.empty()) {
+                return;
+            }
+            for (const VariableDef& v : project.variables) {
+                if (v.name == name) {
+                    return;
+                }
+            }
+            VariableDef def{name, types.Builtin(TypeTag::Int)};
+            project.variables.push_back(def);
+            RegisterVariableNodes(classes, builtins, types, def);
+            if (rebuildPalette) {
+                rebuildPalette();
+            }
+        }));
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(row));
+        const ui::Size s = raw->Measure(painter, ui::Size{260.0f, 40.0f});
+        raw->Arrange(ui::Rect{8.0f, 230.0f, s.w + 8.0f, s.h + 8.0f});
+        panels.push_back(std::move(panel));
+    }
+
     // Save/load the whole project. Load resets the registries in place (so
     // references stay valid), re-imports, then rebinds behaviors and rebuilds
     // dependent UI.
@@ -581,6 +614,41 @@ int main()
     bool dragRecorded = false;
     float lastX = 0.0f;
     float lastY = 0.0f;
+    // Comment drag: the box being moved and the nodes it carries with it.
+    CommentId draggingComment = INVALID_ID;
+    float commentLastX = 0.0f;
+    float commentLastY = 0.0f;
+    std::vector<NodeId> commentGroup;
+
+    // Recenters the canvas on the world point a minimap click maps to.
+    // Returns true when the click landed inside the minimap panel.
+    const auto minimapClick = [&](float sx, float sy) -> bool {
+        const float w = static_cast<float>(window.GetWidth());
+        const float h = static_cast<float>(window.GetHeight());
+        const ViewRect panel{w * 0.5f - 120.0f, h - 150.0f, 240.0f, 130.0f};
+        if (sx < panel.x || sx > panel.x + panel.w || sy < panel.y || sy > panel.y + panel.h) {
+            return false;
+        }
+        const render::GraphLayout lay = render::ComputeGraphLayout(graph, classes, measure);
+        std::vector<NodeBox> boxes;
+        for (const render::NodeLayout& nl : lay.Nodes()) {
+            boxes.push_back(NodeBox{nl.id, nl.x, nl.y, nl.w, nl.h});
+        }
+        Bounds content;
+        if (!ComputeBounds(boxes, content)) {
+            return false;
+        }
+        const render::Vec2 tl = canvas.ScreenToCanvas(render::Vec2{0.0f, 0.0f});
+        const render::Vec2 br = canvas.ScreenToCanvas(render::Vec2{w, h});
+        const MinimapFit fit = ComputeMinimap(content, panel, Bounds{tl.x, tl.y, br.x, br.y});
+        if (fit.scale <= 0.0f) {
+            return false;
+        }
+        const render::Vec2 world{(sx - fit.offsetX) / fit.scale, (sy - fit.offsetY) / fit.scale};
+        const render::Vec2 now = canvas.CanvasToScreen(world);
+        canvas.PanByScreenDelta(w * 0.5f - now.x, h * 0.5f - now.y);
+        return true;
+    };
 
     for (;;) {
         if (!window.PumpEvents(events)) {
@@ -616,6 +684,11 @@ int main()
                 continue;
             }
             const render::Vec2 cp = canvas.ScreenToCanvas(render::Vec2{e.x, e.y});
+            // Minimap click navigates the view (screen-space hit).
+            if (e.type == EditorInputType::MouseDown && e.button == EditorMouseButton::Left
+                && minimapClick(e.x, e.y)) {
+                continue;
+            }
             if (e.type == EditorInputType::MouseDown && e.button == EditorMouseButton::Left
                 && e.shift) {
                 // Shift-click a node toggles a breakpoint.
@@ -637,8 +710,38 @@ int main()
             } else if (e.type == EditorInputType::MouseDown
                        && e.button == EditorMouseButton::Left) {
                 dragRecorded = false;
-                fsm.OnMouseDown(cp.x, cp.y, graph, layout);
+                // A click inside a comment box (and not on a node) drags the
+                // comment together with the nodes it encloses.
+                CommentId hitComment = INVALID_ID;
+                if (HitTestNode(layout, cp.x, cp.y) == INVALID_ID) {
+                    for (const Comment& c : project.comments) {
+                        if (cp.x >= c.x && cp.x <= c.x + c.w && cp.y >= c.y
+                            && cp.y <= c.y + c.h) {
+                            hitComment = c.id;
+                        }
+                    }
+                }
+                if (hitComment != INVALID_ID) {
+                    history.Record(graph);
+                    draggingComment = hitComment;
+                    commentLastX = cp.x;
+                    commentLastY = cp.y;
+                    commentGroup.clear();
+                    for (const Comment& c : project.comments) {
+                        if (c.id != hitComment) {
+                            continue;
+                        }
+                        std::vector<NodeBox> boxes;
+                        for (const render::NodeLayout& nl : layout.Nodes()) {
+                            boxes.push_back(NodeBox{nl.id, nl.x, nl.y, nl.w, nl.h});
+                        }
+                        commentGroup = NodesInRect(boxes, ViewRect{c.x, c.y, c.w, c.h});
+                    }
+                } else {
+                    fsm.OnMouseDown(cp.x, cp.y, graph, layout);
+                }
             } else if (e.type == EditorInputType::MouseUp && e.button == EditorMouseButton::Left) {
+                draggingComment = INVALID_ID;
                 // A link drag creates/replaces a link on release: checkpoint
                 // the graph just before it lands. If the pins can't connect
                 // directly but a scalar converter exists, drop one between
@@ -665,6 +768,24 @@ int main()
                     canvas.PanByScreenDelta(e.x - lastX, e.y - lastY);
                     lastX = e.x;
                     lastY = e.y;
+                } else if (draggingComment != INVALID_ID) {
+                    const float dx = cp.x - commentLastX;
+                    const float dy = cp.y - commentLastY;
+                    for (Comment& c : project.comments) {
+                        if (c.id == draggingComment) {
+                            c.x += dx;
+                            c.y += dy;
+                        }
+                    }
+                    for (NodeId id : commentGroup) {
+                        Node* n = graph.FindNode(id);
+                        if (n != nullptr) {
+                            n->x += dx;
+                            n->y += dy;
+                        }
+                    }
+                    commentLastX = cp.x;
+                    commentLastY = cp.y;
                 } else {
                     // Checkpoint once, at the first actual node-drag move, so
                     // the pre-drag positions are captured (a plain click that
