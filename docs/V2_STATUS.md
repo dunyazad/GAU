@@ -87,8 +87,10 @@ build/Debug/gau2.exe                    # v2 앱
   - 타입 변환 자동 삽입: 비호환 핀 드롭 시 InsertConversion 으로 변환 노드 삽입.
   - 변수 패널(상단 좌측, int 변수 추가 -> Get/Set 팔레트 등록).
   - 미니맵 클릭 뷰 네비게이션, 코멘트 드래그(포함 노드 함께 이동, 노드 이동은 언두 커버).
+  - 함수 본문 편집: `Graph* active` 로 메인/함수본문 전환. Call 노드 선택 -> Edit Fn 으로
+    본문(def->body) 편집, Main 으로 복귀. Run/Debug 는 항상 main. 코멘트는 main 에서만.
 - 남은 배선:
-  - 함수 편집 UI(본문 캔버스 전환, 인터페이스 편집). 큰 슬라이스 -- 아래 참고.
+  - 함수 인터페이스 편집(입출력 파라미터 추가/삭제 -> Call/Entry/Return 클래스 재생성).
   - 변수 삭제/타입 지정, 코멘트 편집/삭제(현재 추가/이동만).
 
 ## 환경 제약으로 보류 (Windows 개발 환경서 검증 불가)
@@ -101,12 +103,11 @@ build/Debug/gau2.exe                    # v2 앱
 
 ## 다음 세션 착수 순서 (권장)
 
-1. **함수 편집 UI** — 함수 본문(def->body)을 메인 캔버스에서 편집. 착수 노트:
-   gau2 는 현재 `Graph& graph = *project.graph` 고정 참조로 편집. 함수 본문 편집하려면
-   활성 그래프를 `Graph*` 포인터로 바꿔 메인/함수 본문 전환 필요(전 사용처 `graph` ->
-   `*activeGraph` 치환, 큰 churn). Call 노드 선택 -> "Edit Fn" 으로 본문 진입, "Main"
-   으로 복귀. 언두 히스토리도 그래프별로 분리 필요.
-2. **정리 항목** — 변수 삭제/타입 지정, 코멘트 편집/삭제.
+1. **함수 인터페이스 편집** — 함수 입출력 파라미터 추가/삭제 UI. FunctionDef.inputs/outputs
+   변경 시 Call/Entry/Return 클래스 재생성(RegisterFunctionNodes 재호출) + 기존 노드 핀
+   갱신 필요. 본문 편집(Edit Fn/Main)은 완료됨.
+2. **정리 항목** — 변수 삭제/타입 지정, 코멘트 편집/삭제, 언두를 그래프별 히스토리로 분리
+   (현재는 컨텍스트 전환 시 clear).
 3. (환경 갖춰지면) **FR-WASM** (LLVM 필요), **FR-PLT Apple/터치** (macOS/Xcode 필요).
 
 언두 관련 알려진 한계: UndoHistory 는 그래프 스냅샷만 -> collapse/expand 언두 시 그래프는
