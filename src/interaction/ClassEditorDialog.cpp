@@ -714,6 +714,35 @@ static void BuildTypeOptions(std::vector<TypeOption>& out, const PinType* builti
     }
 }
 
+// Appends node classes categorized as "Object" as selectable object-by-name
+// (UserType) options, deduped against options already present. This lets an
+// Object-category node class be used directly as a pin type (nominal object
+// type matched by name), without first defining a user Type.
+static void AppendObjectClassTypes(std::vector<TypeOption>& out)
+{
+    for (const NodeClass* nodeClass : NodeClass::GetRegistry()) {
+        if (nodeClass->GetCategory() != "Object") {
+            continue;
+        }
+        const std::string name = nodeClass->GetName();
+        bool duplicate = false;
+        for (const TypeOption& existing : out) {
+            if (existing.type == PinType::UserType && existing.typeName == name) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) {
+            continue;
+        }
+        TypeOption option;
+        option.type = PinType::UserType;
+        option.typeName = name;
+        option.label = name;
+        out.push_back(std::move(option));
+    }
+}
+
 // Builtin types offered for a struct field (any value type or object, but
 // not Exec).
 static const PinType FIELD_BUILTIN_TYPES[5] = {
@@ -732,11 +761,13 @@ void ClassEditorDialog::OpenDropdown(DialogDropdownKind kind, int rowIndex)
 
     if (kind == DialogDropdownKind::PinType) {
         BuildTypeOptions(typeOptions, ALL_PIN_TYPES, PIN_TYPE_COUNT, false);
+        AppendObjectClassTypes(typeOptions);
     } else if (kind == DialogDropdownKind::PropertyType
                || kind == DialogDropdownKind::PropertyKeyType) {
         BuildTypeOptions(typeOptions, VALUE_PIN_TYPES, VALUE_PIN_TYPE_COUNT, true);
     } else if (kind == DialogDropdownKind::FieldType) {
         BuildTypeOptions(typeOptions, FIELD_BUILTIN_TYPES, 5, false);
+        AppendObjectClassTypes(typeOptions);
     }
 
     if (kind == DialogDropdownKind::Category) {
