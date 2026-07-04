@@ -77,6 +77,20 @@ public:
     const Value& Property(const Node& node, int index) const;
     void Log(const std::string& message) const;
 
+    // Function-call marshalling. A Call node's behavior seeds the params a
+    // nested runtime hands to the body's Entry node, then reads the values
+    // the body's Return node wrote back.
+    void SetParamsIn(std::vector<Value> params);
+    Value ParamIn(int index) const;
+    void SetResult(int index, Value value);
+    Value ResultOut(int index) const;
+    // Runs one node's behavior directly (used to pull a pure function's
+    // Return node). Does not advance exec flow.
+    void EvalNode(NodeId nodeId);
+    // Recursion guard threaded from caller to nested runtime.
+    void SetCallDepth(int depth) { callDepth = depth; }
+    int CallDepth() const { return callDepth; }
+
 private:
     const NodeClass* ClassOf(const Node& node) const;
     bool IsExecPin(const Pin& pin) const;
@@ -85,6 +99,9 @@ private:
     PinId DefaultNextExec(const Node& node) const;
     NodeId FollowExec(PinId execOutputPinId) const;
     Value CachedOutput(PinId outputPinId) const;
+    // Latches an exec node's data outputs so a later node can pull them
+    // after the per-step outputCache has been cleared.
+    void LatchExecOutputs(const Node& node);
 
     const Graph* graph;
     const TypeRegistry* types;
@@ -93,13 +110,17 @@ private:
     LogFn log;
 
     std::vector<std::pair<PinId, Value>> outputCache;
+    std::vector<std::pair<PinId, Value>> execOutputCache;
     std::vector<NodeId> breakpoints;
     std::vector<NodeId> evalStack;
+    std::vector<Value> paramsIn;
+    std::vector<Value> resultsOut;
 
     RunState state = RunState::Idle;
     NodeId pcNode = INVALID_ID;
     PinId chosenExec = INVALID_ID;
     bool ignoreBreakOnce = false;
+    int callDepth = 0;
 };
 
 // Passed to a node behavior during evaluation. Indices refer to the

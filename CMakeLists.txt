@@ -40,6 +40,7 @@ endif()
 add_library(gau_model STATIC
     src/model/Graph.cpp
     src/model/NodeClassV2.cpp
+    src/model/Function.cpp
 )
 target_include_directories(gau_model PUBLIC src)
 target_link_libraries(gau_model PUBLIC gau_core)
@@ -52,6 +53,7 @@ add_library(gau_exec STATIC
     src/exec/Runtime.cpp
     src/exec/Builtins.cpp
     src/exec/StructNodes.cpp
+    src/exec/FunctionNodes.cpp
 )
 target_include_directories(gau_exec PUBLIC src)
 target_link_libraries(gau_exec PUBLIC gau_model gau_core)
@@ -203,6 +205,11 @@ add_executable(struct_nodes_tests tests/StructNodesTests.cpp)
 target_include_directories(struct_nodes_tests PRIVATE src)
 target_link_libraries(struct_nodes_tests PRIVATE gau_exec)
 add_test(NAME struct_nodes_tests COMMAND struct_nodes_tests)
+
+add_executable(function_nodes_tests tests/FunctionNodesTests.cpp)
+target_include_directories(function_nodes_tests PRIVATE src)
+target_link_libraries(function_nodes_tests PRIVATE gau_exec)
+add_test(NAME function_nodes_tests COMMAND function_nodes_tests)
 
 add_executable(ui_tests tests/UiTests.cpp)
 target_include_directories(ui_tests PRIVATE src)

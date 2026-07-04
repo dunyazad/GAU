@@ -90,7 +90,38 @@ Value Runtime::CachedOutput(PinId outputPinId) const
             return entry.second;
         }
     }
+    for (const auto& entry : execOutputCache) {
+        if (entry.first == outputPinId) {
+            return entry.second;
+        }
+    }
     return Value::None();
+}
+
+void Runtime::LatchExecOutputs(const Node& node)
+{
+    for (const Pin& pin : node.outputs) {
+        if (IsExecPin(pin)) {
+            continue;
+        }
+        for (const auto& produced : outputCache) {
+            if (produced.first != pin.id) {
+                continue;
+            }
+            bool found = false;
+            for (auto& latched : execOutputCache) {
+                if (latched.first == pin.id) {
+                    latched.second = produced.second;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                execOutputCache.emplace_back(pin.id, produced.second);
+            }
+            break;
+        }
+    }
 }
 
 void Runtime::SetOutput(PinId outputPinId, Value value)
@@ -116,6 +147,46 @@ const Value& Runtime::Property(const Node& node, int index) const
         return none;
     }
     return node.properties[static_cast<std::size_t>(index)];
+}
+
+void Runtime::SetParamsIn(std::vector<Value> params)
+{
+    paramsIn = std::move(params);
+}
+
+Value Runtime::ParamIn(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(paramsIn.size())) {
+        return Value::None();
+    }
+    return paramsIn[static_cast<std::size_t>(index)];
+}
+
+void Runtime::SetResult(int index, Value value)
+{
+    if (index < 0) {
+        return;
+    }
+    if (index >= static_cast<int>(resultsOut.size())) {
+        resultsOut.resize(static_cast<std::size_t>(index) + 1);
+    }
+    resultsOut[static_cast<std::size_t>(index)] = std::move(value);
+}
+
+Value Runtime::ResultOut(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(resultsOut.size())) {
+        return Value::None();
+    }
+    return resultsOut[static_cast<std::size_t>(index)];
+}
+
+void Runtime::EvalNode(NodeId nodeId)
+{
+    const Node* node = graph->FindNode(nodeId);
+    if (node != nullptr) {
+        EvaluateNode(*node);
+    }
 }
 
 Value Runtime::EvalInputPin(PinId inputPinId)
@@ -193,6 +264,7 @@ NodeId Runtime::FollowExec(PinId execOutputPinId) const
 void Runtime::Start(NodeId entryNode)
 {
     outputCache.clear();
+    execOutputCache.clear();
     evalStack.clear();
     pcNode = entryNode;
     chosenExec = INVALID_ID;
@@ -228,6 +300,7 @@ RunState Runtime::Step()
     outputCache.clear();
     chosenExec = INVALID_ID;
     EvaluateNode(*node);
+    LatchExecOutputs(*node);
 
     PinId nextExec = (chosenExec != INVALID_ID) ? chosenExec : DefaultNextExec(*node);
     pcNode = (nextExec != INVALID_ID) ? FollowExec(nextExec) : INVALID_ID;
