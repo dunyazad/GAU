@@ -47,6 +47,17 @@ if(MSVC)
     target_compile_definitions(gau_model PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+# --- gau_exec (v2 runtime VM) ---
+add_library(gau_exec STATIC
+    src/exec/Runtime.cpp
+    src/exec/Builtins.cpp
+)
+target_include_directories(gau_exec PUBLIC src)
+target_link_libraries(gau_exec PUBLIC gau_model gau_core)
+if(MSVC)
+    target_compile_definitions(gau_exec PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- editor executable ---
 add_executable(gau
     src/main.cpp
@@ -123,6 +134,11 @@ add_executable(model_tests tests/ModelTests.cpp)
 target_include_directories(model_tests PRIVATE src)
 target_link_libraries(model_tests PRIVATE gau_model)
 add_test(NAME model_tests COMMAND model_tests)
+
+add_executable(exec_vm_tests tests/ExecVmTests.cpp)
+target_include_directories(exec_vm_tests PRIVATE src)
+target_link_libraries(exec_vm_tests PRIVATE gau_exec)
+add_test(NAME exec_vm_tests COMMAND exec_vm_tests)
 
 add_executable(canvas_tests
     tests/CanvasTests.cpp
