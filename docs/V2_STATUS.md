@@ -7,7 +7,7 @@
 ```
 cmake -S . -B build
 cmake --build build --config Debug
-ctest --test-dir build -C Debug        # 21개 스위트, 전부 통과
+ctest --test-dir build -C Debug        # 22개 스위트, 전부 통과
 build/Debug/gau.exe                     # v1 앱
 build/Debug/gau2.exe                    # v2 앱
 ```
@@ -23,8 +23,9 @@ build/Debug/gau2.exe                    # v2 앱
 - **core** — TypeRegistry(인턴 타입, enum/struct/object, 컨테이너 Array/Set/Map,
   기본값, 표시명) + 통합 Value(스칼라/enum/struct/컨테이너). `core_tests`.
 - **model** — Graph/Node/Link/NodeClassV2(레지스트리)/Function(FunctionDef +
-  FunctionRegistry)/Project. TypeId 핀, Value 프로퍼티, CanConnect(타입+exec 사이클).
-  `model_tests`.
+  FunctionRegistry)/Variable/Comment/Project + UndoHistory(그래프 스냅샷 언두/리두).
+  TypeId 핀, Value 프로퍼티, CanConnect(타입+exec 사이클). `model_tests`,
+  `undo_history_tests`.
 - **exec** — 중단 가능 Runtime(Start/Step/Continue/Run, 브레이크포인트, exec 출력
   래치, 함수 호출 파라미터/결과 마샬링, 재귀 깊이 제한, 변수 저장소, RunError 진단) +
   data pull + NodeEval/BuiltinRegistry + StructNodes(Make/Break) + FunctionNodes(함수
@@ -81,12 +82,13 @@ build/Debug/gau2.exe                    # v2 앱
     사용, 로드 시 레지스트리 in-place Clear -> 재임포트 -> 동작 재바인딩 -> 팔레트 재빌드.
   - 미니맵 렌더(하단 중앙, 노드 + 뷰포트), 코멘트 박스 렌더(Comment 버튼으로 추가),
     검색창(상단 중앙, 매칭 노드로 뷰 센터 이동).
+  - 언두/리두: 그래프 편집 전 UndoHistory.Record. Ctrl+Z/Shift+Z/Ctrl+Y + Undo/Redo 버튼.
+    노드 추가/드래그/링크/collapse/expand/정렬/프로퍼티 커버(코멘트는 그래프 밖이라 제외).
 - 남은 배선(로직/라이브러리는 있음, 입력/렌더만 남음):
   - 타입 변환 자동 삽입(SuggestConversion, 비호환 링크 드롭 시 변환 노드 삽입).
   - 변수 관리 패널(변수 추가/삭제, Get/Set 노드 팔레트).
-  - 코멘트 드래그 이동(NodesInRect 로 포함 노드 함께 이동), 미니맵 클릭 네비게이션.
+  - 코멘트 드래그 이동(NodesInRect 로 포함 노드 함께 이동) + 언두 커버, 미니맵 클릭 네비게이션.
   - 함수 편집 UI(본문 캔버스, 인터페이스 편집).
-  - 언두/리두 통합(현재 gau2 편집은 UndoStack 미연결).
 
 ## 환경 제약으로 보류 (Windows 개발 환경서 검증 불가)
 
@@ -98,13 +100,15 @@ build/Debug/gau2.exe                    # v2 앱
 
 ## 다음 세션 착수 순서 (권장)
 
-1. **언두/리두 통합** — gau2 편집(노드 이동/추가/삭제, 링크, collapse, 정렬)을 UndoStack
-   커맨드로. 현재 직접 변경이라 되돌리기 불가. CLAUDE.md 6절 요구사항.
-2. **타입 변환 자동 삽입** — 비호환 핀 링크 드롭 시 SuggestConversion 으로 변환 노드 삽입.
+1. **타입 변환 자동 삽입** — 비호환 핀 링크 드롭 시 SuggestConversion 으로 변환 노드 삽입.
    InteractionFsm 링크 완료 지점 + gau2.
-3. **변수 관리 패널 / 코멘트 드래그 / 미니맵 클릭 네비** — 나머지 UX 배선.
-4. **함수 편집 UI** — 함수 본문을 별도 캔버스에서 편집(현재는 collapse/코드로만 구성).
-5. (환경 갖춰지면) **FR-WASM** (LLVM 필요), **FR-PLT Apple/터치** (macOS/Xcode 필요).
+2. **변수 관리 패널 / 코멘트 드래그(언두 포함) / 미니맵 클릭 네비** — 나머지 UX 배선.
+3. **함수 편집 UI** — 함수 본문을 별도 캔버스에서 편집(현재는 collapse/코드로만 구성).
+4. (환경 갖춰지면) **FR-WASM** (LLVM 필요), **FR-PLT Apple/터치** (macOS/Xcode 필요).
+
+언두 관련 알려진 한계: UndoHistory 는 그래프 스냅샷만 -> collapse/expand 언두 시 그래프는
+복원되나 생성된 함수 클래스/def 는 레지스트리에 잔류(미사용 orphan). 코멘트/변수 정의는
+그래프 밖이라 언두 미커버. 필요 시 Project 레벨 히스토리로 확장.
 
 ## 관례
 
