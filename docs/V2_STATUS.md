@@ -7,7 +7,7 @@
 ```
 cmake -S . -B build
 cmake --build build --config Debug
-ctest --test-dir build -C Debug        # 22개 스위트, 전부 통과
+ctest --test-dir build -C Debug        # 23개 스위트, 전부 통과
 build/Debug/gau.exe                     # v1 앱
 build/Debug/gau2.exe                    # v2 앱
 ```
@@ -89,11 +89,13 @@ build/Debug/gau2.exe                    # v2 앱
   - 미니맵 클릭 뷰 네비게이션, 코멘트 드래그(포함 노드 함께 이동, 노드 이동은 언두 커버).
   - 함수 본문 편집: `Graph* active` 로 메인/함수본문 전환. Call 노드 선택 -> Edit Fn 으로
     본문(def->body) 편집, Main 으로 복귀. Run/Debug 는 항상 main. 코멘트는 main 에서만.
-  - 함수 인터페이스 편집(추가): Add In/Add Out -> AddFunctionParam 이 Entry/Return/Call
-    클래스 재생성 + 모든 인스턴스 핀 append(기존 핀/링크 보존). `function_interface_tests`.
-- 남은 배선:
-  - 함수 파라미터 삭제(핀/링크 제거 + 재인덱스 필요), 파라미터 타입 선택(현재 int 고정).
-  - 변수 삭제/타입 지정, 코멘트 편집/삭제(현재 추가/이동만).
+  - 함수 인터페이스 편집: Add In/Out(AddFunctionParam) + Del In/Out(RemoveFunctionParam).
+    모든 인스턴스 핀 append/remove(링크 정리 포함). `function_interface_tests`.
+  - 파라미터/변수 타입 선택(Type 버튼, bool/int/float/string 순환).
+  - 변수 삭제(Del Var, Get/Set 클래스는 orphan 잔류), 코멘트 삭제(Del Comment).
+  - 그래프별 언두 히스토리(map<Graph*, UndoHistory>) -- 컨텍스트 전환해도 각 그래프 유지.
+- 남은 배선(minor):
+  - 코멘트 텍스트 인라인 편집(현재 추가/드래그/삭제만; 편집엔 코멘트 선택 UI 필요).
 
 ## 환경 제약으로 보류 (Windows 개발 환경서 검증 불가)
 
@@ -105,12 +107,15 @@ build/Debug/gau2.exe                    # v2 앱
 
 ## 다음 세션 착수 순서 (권장)
 
-함수 편집(본문 + 파라미터 추가)까지 완료. 남은 것은 정리/폴리시 + 환경 제약 항목뿐.
+desktop 기능 + UI + 폴리시(함수 본문/인터페이스 편집, 파라미터/변수/코멘트 CRUD, 타입 선택,
+그래프별 언두)까지 전부 완료. 남은 것은 환경 제약 항목 + 사소한 것뿐.
 
-1. **정리/폴리시** — 함수 파라미터 삭제(핀/링크 제거 + 재인덱스), 파라미터 타입 선택(현재
-   int 고정), 변수 삭제/타입, 코멘트 편집/삭제, 언두를 그래프별 히스토리로 분리(현재 컨텍스트
-   전환 시 clear).
-2. (환경 갖춰지면) **FR-WASM** (LLVM 필요), **FR-PLT Apple/터치** (macOS/Xcode 필요).
+1. **FR-WASM-1~3 (환경 필요)** — v1 WasmRuntime(wasm3)/ExecEngine 을 v2 Runtime 에 통합.
+   커스텀 노드 클래스 execFn -> wasm3 호출 바인딩. **LLVM(clang wasm32) 로 .wasm 빌드해야
+   실행 검증 가능** -- 없이 배선만 하면 미검증 코드라 보류 중. 툴체인 갖춰지면 착수.
+2. **FR-PLT-1~2 Apple/터치 (환경 필요)** — PlatformNVG Metal(.mm) 경로, macOS 빌드,
+   iOS Xcode 프로젝트, 터치 입력. **macOS/Xcode 필요, Windows 불가.**
+3. (사소) 코멘트 텍스트 인라인 편집.
 
 언두 관련 알려진 한계: UndoHistory 는 그래프 스냅샷만 -> collapse/expand 언두 시 그래프는
 복원되나 생성된 함수 클래스/def 는 레지스트리에 잔류(미사용 orphan). 코멘트/변수 정의는
