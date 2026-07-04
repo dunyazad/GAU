@@ -154,6 +154,7 @@ add_custom_command(TARGET gau POST_BUILD
 add_library(gau_interaction STATIC
     src/interaction/HitTest2.cpp
     src/interaction/InteractionFsm.cpp
+    src/interaction/Align.cpp
 )
 target_include_directories(gau_interaction PUBLIC src)
 target_link_libraries(gau_interaction PUBLIC gau_render gau_model gau_core)
@@ -264,6 +265,11 @@ add_executable(interaction_tests tests/InteractionTests.cpp)
 target_include_directories(interaction_tests PRIVATE src)
 target_link_libraries(interaction_tests PRIVATE gau_interaction)
 add_test(NAME interaction_tests COMMAND interaction_tests)
+
+add_executable(align_tests tests/AlignTests.cpp)
+target_include_directories(align_tests PRIVATE src)
+target_link_libraries(align_tests PRIVATE gau_interaction)
+add_test(NAME align_tests COMMAND align_tests)
 
 add_executable(canvas_tests
     tests/CanvasTests.cpp
