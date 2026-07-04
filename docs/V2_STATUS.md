@@ -63,15 +63,18 @@ build/Debug/gau2.exe                    # v2 앱
 전체 21개 스위트 통과. 위 로직은 라이브러리 + 테스트로 완성됐고, gau2 UI 배선(버튼/
 패널/렌더)은 Collapse 만 연결됨 -- 나머지는 아래 참조.
 
-## 남은 작업 (gau2 UI 배선, 로직은 준비됨)
+## gau2 UI 배선
 
-1. **인라인 값 편집** — ui TextField 위젯 + 프로퍼티 패널(선택 노드 필드 편집). 유일하게
-   로직도 미구현.
-2. **UI 배선** — 아래 완성된 라이브러리를 gau2 에 연결(버튼/렌더):
-   - 정렬(Align), 검색(NodeSearch), 미니맵(Minimap) 렌더, 코멘트 박스 렌더/드래그,
-     타입 변환 자동 삽입(SuggestConversion, 링크 드롭 시), 변수 패널(Get/Set 생성),
-     파일 저장/로드 다이얼로그(PlatformFileDialog 존재), Expand 버튼.
-3. **함수 편집 UI** — 함수 본문 캔버스, 인터페이스 편집.
+- 완료: 인라인 값 편집(ui TextField + 프로퍼티 패널, `ui_tests`), Collapse/Expand 버튼,
+  정렬(Align L/T)/분배(Distribute H) 버튼, 함수 팔레트 재빌드, Debug/Step/Continue/Run.
+- 남은 배선(완성된 라이브러리를 연결만 하면 됨, 렌더/입력 작업이라 단위 테스트 불가):
+  - 검색(NodeSearch) 입력창 + 캔버스 포커스 이동(Canvas 센터 API 필요).
+  - 미니맵(Minimap) 렌더 + 클릭 이동, 코멘트 박스 렌더/드래그(NodesInRect 그룹 이동).
+  - 타입 변환 자동 삽입(SuggestConversion, 비호환 링크 드롭 시).
+  - 변수 패널(변수 추가/Get/Set 노드 생성).
+  - 파일 저장/로드 다이얼로그(PlatformFileDialog + ProjectFile). 단 gau2 는 현재 Project
+    컨테이너가 아닌 로컬 graph/classes 사용 -> 저장/로드 전에 Project 로 리팩터 필요.
+  - 함수 편집 UI(본문 캔버스, 인터페이스 편집).
 
 ## 환경 제약으로 보류 (Windows 개발 환경서 검증 불가)
 
