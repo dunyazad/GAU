@@ -33,6 +33,13 @@ public:
     State GetState() const { return state; }
     const std::vector<NodeId>& Selection() const { return selection; }
     bool IsSelected(NodeId nodeId) const;
+    // Drops the current selection (e.g. after its nodes are removed by a
+    // collapse). Returns to Idle.
+    void ClearSelection()
+    {
+        selection.clear();
+        state = State::Idle;
+    }
 
     // Link-drag preview (for rendering the temporary wire).
     bool IsDraggingLink() const { return state == State::DraggingLink; }

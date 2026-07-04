@@ -8,9 +8,11 @@
 
 #include "core/TypeRegistry.h"
 #include "exec/Builtins.h"
+#include "exec/FunctionOps.h"
 #include "exec/Runtime.h"
 #include "interaction/HitTest2.h"
 #include "interaction/InteractionFsm.h"
+#include "model/Function.h"
 #include "model/Graph.h"
 #include "model/NodeClassV2.h"
 #include "render/GraphLayout.h"
@@ -23,6 +25,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -117,10 +120,17 @@ int main()
     RegisterDemoClasses(classes, types);
     BuiltinRegistry builtins;
     RegisterDemoBuiltins(builtins);
+    FunctionRegistry functions;
     Graph graph(types);
     const NodeId entry = BuildDemoGraph(graph, classes);
 
     render::Canvas canvas;
+
+    // Interaction state (declared early so panel callbacks can read the
+    // selection and rebuild the palette).
+    InteractionFsm fsm;
+    int funcCount = 0;
+    std::function<void()> rebuildPalette;
 
     // Debug state: breakpoints and a persistent runtime when stepping.
     std::vector<NodeId> breakpoints;
@@ -159,6 +169,21 @@ int main()
                 debug->Run(10000);
             }
         }));
+        column->Add(std::make_unique<ui::Button>("Collapse", [&]() {
+            const std::vector<NodeId> sel = fsm.Selection();
+            if (sel.empty()) {
+                return;
+            }
+            const std::string name = "Func" + std::to_string(++funcCount);
+            const NodeId call =
+                CollapseSelection(graph, types, classes, builtins, functions, sel, name);
+            if (call != INVALID_ID) {
+                fsm.ClearSelection();
+                if (rebuildPalette) {
+                    rebuildPalette();
+                }
+            }
+        }));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{200.0f, 200.0f});
@@ -167,11 +192,25 @@ int main()
     }
 
     // Palette panel (top-right): one button per node class spawns a node.
-    {
+    // Function marshalling classes ("<fn> In"/"<fn> Out") are internal, so
+    // they are hidden; the function's Call class is kept. Rebuilt whenever a
+    // new function is created.
+    const auto isMarshallingClass = [&functions](const std::string& name) {
+        for (const auto& def : functions.All()) {
+            if (name == def->name + " In" || name == def->name + " Out") {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto buildPalette = [&]() -> std::unique_ptr<ui::Widget> {
         auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
         auto column = std::make_unique<ui::Column>(4.0f);
         for (const NodeClass& c : classes.All()) {
             const std::string name = c.name;
+            if (isMarshallingClass(name)) {
+                continue;
+            }
             column->Add(std::make_unique<ui::Button>(
                 "+ " + name, [&graph, &classes, &canvas, &window, &spawnCount, name]() {
                     const NodeClass* cls = classes.Find(name);
@@ -190,8 +229,13 @@ int main()
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{240.0f, 400.0f});
         raw->Arrange(ui::Rect{initW - s.w - 16.0f, 8.0f, s.w + 8.0f, s.h + 8.0f});
-        panels.push_back(std::move(panel));
-    }
+        return panel;
+    };
+    const std::size_t paletteIndex = panels.size();
+    panels.push_back(buildPalette());
+    rebuildPalette = [&panels, &buildPalette, paletteIndex]() {
+        panels[paletteIndex] = buildPalette();
+    };
 
     // Selection info panel (bottom-left), text updated each frame.
     ui::Label* infoLabel = nullptr;
@@ -208,7 +252,6 @@ int main()
         panels.push_back(std::move(panel));
     }
 
-    InteractionFsm fsm;
     const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
         return painter.MeasureText(s, size);
     };
