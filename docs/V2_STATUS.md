@@ -65,16 +65,20 @@ build/Debug/gau2.exe                    # v2 앱
 
 ## gau2 UI 배선
 
-- 완료: 인라인 값 편집(ui TextField + 프로퍼티 패널, `ui_tests`), Collapse/Expand 버튼,
-  정렬(Align L/T)/분배(Distribute H) 버튼, 함수 팔레트 재빌드, Debug/Step/Continue/Run.
-- 남은 배선(완성된 라이브러리를 연결만 하면 됨, 렌더/입력 작업이라 단위 테스트 불가):
-  - 검색(NodeSearch) 입력창 + 캔버스 포커스 이동(Canvas 센터 API 필요).
-  - 미니맵(Minimap) 렌더 + 클릭 이동, 코멘트 박스 렌더/드래그(NodesInRect 그룹 이동).
-  - 타입 변환 자동 삽입(SuggestConversion, 비호환 링크 드롭 시).
-  - 변수 패널(변수 추가/Get/Set 노드 생성).
-  - 파일 저장/로드 다이얼로그(PlatformFileDialog + ProjectFile). 단 gau2 는 현재 Project
-    컨테이너가 아닌 로컬 graph/classes 사용 -> 저장/로드 전에 Project 로 리팩터 필요.
+- 완료:
+  - 인라인 값 편집(ui TextField + 프로퍼티 패널, `ui_tests`).
+  - Collapse/Expand 버튼, 정렬(Align L/T)/분배(Distribute H) 버튼.
+  - 함수 팔레트 재빌드(변환 노드 포함), Debug/Step/Continue/Run.
+  - 프로젝트 Save/Load(네이티브 다이얼로그 + ProjectFile). gau2 는 이제 Project 컨테이너
+    사용, 로드 시 레지스트리 in-place Clear -> 재임포트 -> 동작 재바인딩 -> 팔레트 재빌드.
+  - 미니맵 렌더(하단 중앙, 노드 + 뷰포트), 코멘트 박스 렌더(Comment 버튼으로 추가),
+    검색창(상단 중앙, 매칭 노드로 뷰 센터 이동).
+- 남은 배선(로직/라이브러리는 있음, 입력/렌더만 남음):
+  - 타입 변환 자동 삽입(SuggestConversion, 비호환 링크 드롭 시 변환 노드 삽입).
+  - 변수 관리 패널(변수 추가/삭제, Get/Set 노드 팔레트).
+  - 코멘트 드래그 이동(NodesInRect 로 포함 노드 함께 이동), 미니맵 클릭 네비게이션.
   - 함수 편집 UI(본문 캔버스, 인터페이스 편집).
+  - 언두/리두 통합(현재 gau2 편집은 UndoStack 미연결).
 
 ## 환경 제약으로 보류 (Windows 개발 환경서 검증 불가)
 
