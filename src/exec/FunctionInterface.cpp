@@ -49,4 +49,47 @@ void AddFunctionParam(FunctionDef& def, bool isOutput, const std::string& name, 
     }
 }
 
+void RemoveFunctionParam(FunctionDef& def, bool isOutput, int index, NodeClassRegistry& classes,
+                         BuiltinRegistry& builtins, TypeRegistry& types, Project& project)
+{
+    std::vector<FunctionParam>& params = isOutput ? def.outputs : def.inputs;
+    if (index < 0 || index >= static_cast<int>(params.size())) {
+        return;
+    }
+    const int off = def.hasExec ? 1 : 0;
+    const std::size_t pos = static_cast<std::size_t>(off + index);
+    const std::string entryName = def.name + " In";
+    const std::string returnName = def.name + " Out";
+    const std::string callName = def.name;
+
+    // Drop the positional pin from each instance before erasing the param.
+    const auto applyTo = [&](Graph& graph) {
+        for (const Node& n : graph.Nodes()) {
+            if (n.className == callName) {
+                const std::vector<Pin>& pins = isOutput ? n.outputs : n.inputs;
+                if (pos < pins.size()) {
+                    graph.RemovePin(n.id, pins[pos].id);
+                }
+            } else if (!isOutput && n.className == entryName) {
+                if (pos < n.outputs.size()) {
+                    graph.RemovePin(n.id, n.outputs[pos].id);
+                }
+            } else if (isOutput && n.className == returnName) {
+                if (pos < n.inputs.size()) {
+                    graph.RemovePin(n.id, n.inputs[pos].id);
+                }
+            }
+        }
+    };
+    applyTo(*project.graph);
+    for (const auto& fp : project.functions.All()) {
+        if (fp->body) {
+            applyTo(*fp->body);
+        }
+    }
+
+    params.erase(params.begin() + index);
+    RegisterFunctionNodes(classes, builtins, types, def);
+}
+
 } // namespace gau

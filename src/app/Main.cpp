@@ -447,6 +447,20 @@ int main()
                                  types.Builtin(TypeTag::Int), classes, builtins, types, project);
             }
         }));
+        column->Add(std::make_unique<ui::Button>("Del In", [&]() {
+            if (editingDef != nullptr && !editingDef->inputs.empty()) {
+                RemoveFunctionParam(*editingDef, false,
+                                    static_cast<int>(editingDef->inputs.size()) - 1, classes,
+                                    builtins, types, project);
+            }
+        }));
+        column->Add(std::make_unique<ui::Button>("Del Out", [&]() {
+            if (editingDef != nullptr && !editingDef->outputs.empty()) {
+                RemoveFunctionParam(*editingDef, true,
+                                    static_cast<int>(editingDef->outputs.size()) - 1, classes,
+                                    builtins, types, project);
+            }
+        }));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{200.0f, 200.0f});

@@ -58,6 +58,32 @@ PinId Graph::AppendPin(NodeId nodeId, PinDirection direction, TypeId type,
     return id;
 }
 
+bool Graph::RemovePin(NodeId nodeId, PinId pinId)
+{
+    Node* node = FindNode(nodeId);
+    if (node == nullptr) {
+        return false;
+    }
+    for (std::size_t i = links.size(); i-- > 0;) {
+        if (links[i].fromPin == pinId || links[i].toPin == pinId) {
+            links.erase(links.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+    }
+    for (std::size_t i = 0; i < node->inputs.size(); ++i) {
+        if (node->inputs[i].id == pinId) {
+            node->inputs.erase(node->inputs.begin() + static_cast<std::ptrdiff_t>(i));
+            return true;
+        }
+    }
+    for (std::size_t i = 0; i < node->outputs.size(); ++i) {
+        if (node->outputs[i].id == pinId) {
+            node->outputs.erase(node->outputs.begin() + static_cast<std::ptrdiff_t>(i));
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Graph::RemoveNode(NodeId nodeId)
 {
     for (std::size_t i = 0; i < nodes.size(); ++i) {

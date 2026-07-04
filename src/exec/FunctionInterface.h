@@ -27,4 +27,10 @@ void AddFunctionParam(FunctionDef& def, bool isOutput, const std::string& name, 
                       NodeClassRegistry& classes, BuiltinRegistry& builtins, TypeRegistry& types,
                       Project& project);
 
+// Removes the input/output parameter at `index`, dropping the matching pin
+// (and any links on it) from every Entry/Return/Call instance, then
+// regenerates the classes/behaviors. No-op if the index is out of range.
+void RemoveFunctionParam(FunctionDef& def, bool isOutput, int index, NodeClassRegistry& classes,
+                         BuiltinRegistry& builtins, TypeRegistry& types, Project& project);
+
 } // namespace gau

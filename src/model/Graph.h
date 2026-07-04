@@ -36,6 +36,10 @@ public:
     // pin id, or INVALID_ID if the node does not exist.
     PinId AppendPin(NodeId nodeId, PinDirection direction, TypeId type, const std::string& name);
 
+    // Removes a pin from a node along with any links touching it. Used when a
+    // function loses a parameter. Returns false if the pin is not found.
+    bool RemovePin(NodeId nodeId, PinId pinId);
+
     const Pin* FindPin(PinId pinId) const;
     const Node* FindPinOwner(PinId pinId) const;
 

@@ -171,10 +171,74 @@ static void TestAddOutputParamKeepsRunning()
     Check(logs == std::vector<std::string>{"7"}, "existing output still yields 7");
 }
 
+// Adding then removing the last input returns the function to its original
+// shape and behavior; removing a middle param reindexes the rest.
+static void TestRemoveParam()
+{
+    Project p;
+    RegisterBase(p.classes, p.types);
+    BuiltinRegistry builtins;
+    RegisterDemoBuiltins(builtins);
+    const TypeId i = p.types.Builtin(TypeTag::Int);
+
+    FunctionDef* def = p.functions.Create(p.types, "Sum2");
+    def->inputs = {{"A", i}, {"B", i}};
+    def->outputs = {{"R", i}};
+    def->hasExec = false;
+    RegisterFunctionNodes(p.classes, builtins, p.types, *def);
+    Graph& body = *def->body;
+    const NodeId entry = body.AddNode(*p.classes.Find("Sum2 In"), 0, 0);
+    const NodeId add1 = body.AddNode(*p.classes.Find("Add"), 0, 0);
+    const NodeId ret = body.AddNode(*p.classes.Find("Sum2 Out"), 0, 0);
+    def->entryNode = entry;
+    def->returnNode = ret;
+    body.AddLink(body.FindNode(entry)->outputs[0].id, body.FindNode(add1)->inputs[0].id);
+    body.AddLink(body.FindNode(entry)->outputs[1].id, body.FindNode(add1)->inputs[1].id);
+    body.AddLink(body.FindNode(add1)->outputs[0].id, body.FindNode(ret)->inputs[0].id);
+
+    Graph& g = *p.graph;
+    const NodeId ev = g.AddNode(*p.classes.Find("EventBegin"), 0, 0);
+    const NodeId m4 = g.AddNode(*p.classes.Find("MakeInt"), 0, 0);
+    const NodeId m5 = g.AddNode(*p.classes.Find("MakeInt"), 0, 0);
+    const NodeId call = g.AddNode(*p.classes.Find("Sum2"), 0, 0);
+    const NodeId print = g.AddNode(*p.classes.Find("PrintInt"), 0, 0);
+    g.FindNode(m4)->properties[0] = Value::Int(4);
+    g.FindNode(m5)->properties[0] = Value::Int(5);
+    g.AddLink(g.FindNode(ev)->outputs[0].id, g.FindNode(print)->inputs[0].id);
+    g.AddLink(g.FindNode(m4)->outputs[0].id, g.FindNode(call)->inputs[0].id);
+    g.AddLink(g.FindNode(m5)->outputs[0].id, g.FindNode(call)->inputs[1].id);
+    g.AddLink(g.FindNode(call)->outputs[0].id, g.FindNode(print)->inputs[1].id);
+
+    const auto run = [&]() {
+        std::vector<std::string> logs;
+        Runtime rt(g, p.types, p.classes, builtins,
+                   [&logs](const std::string& m) { logs.push_back(m); });
+        rt.Start(FindByClass(g, "EventBegin"));
+        rt.Run(1000);
+        return logs;
+    };
+
+    AddFunctionParam(*def, false, "C", i, p.classes, builtins, p.types, p);
+    Check(def->inputs.size() == 3 && g.FindNode(call)->inputs.size() == 3, "grew to three inputs");
+
+    // Remove the last input (C): shape and behavior return to the original.
+    RemoveFunctionParam(*def, false, 2, p.classes, builtins, p.types, p);
+    Check(def->inputs.size() == 2, "back to two inputs");
+    Check(g.FindNode(call)->inputs.size() == 2, "call node back to two inputs");
+    Check(body.FindNode(entry)->outputs.size() == 2, "entry node back to two outputs");
+    Check(run() == std::vector<std::string>{"9"}, "still runs 9 after add+remove");
+
+    // Remove a middle input (A at index 0): B shifts down, C-less.
+    RemoveFunctionParam(*def, false, 0, p.classes, builtins, p.types, p);
+    Check(def->inputs.size() == 1 && def->inputs[0].name == "B", "middle removal keeps B");
+    Check(g.FindNode(call)->inputs.size() == 1, "call node has one input after middle removal");
+}
+
 int main()
 {
     TestAddInputParam();
     TestAddOutputParamKeepsRunning();
+    TestRemoveParam();
     if (failCount == 0) {
         std::printf("function_interface_tests: all passed\n");
     }
