@@ -359,6 +359,10 @@ int main()
     std::vector<std::unique_ptr<ui::Widget>> panels;
     const float initW = static_cast<float>(window.GetWidth());
     const float initH = static_cast<float>(window.GetHeight());
+    // The comment box whose text is being edited (INVALID_ID = none). Set on a
+    // comment click, cleared on any other canvas click; the comment editor
+    // panel tracks it.
+    CommentId selectedComment = INVALID_ID;
 
     // Run panel (top-left).
     {
@@ -436,6 +440,9 @@ int main()
         }));
         column->Add(std::make_unique<ui::Button>("Del Comment", [&]() {
             if (!project.comments.empty()) {
+                if (project.comments.back().id == selectedComment) {
+                    selectedComment = INVALID_ID;
+                }
                 project.comments.pop_back();
             }
         }));
@@ -613,6 +620,46 @@ int main()
     panels.push_back(buildProperties(INVALID_ID));
     NodeId shownNode = INVALID_ID;
 
+    // Comment editor panel (bottom-left, above the info label): a text field to
+    // rename the selected comment box (FR-UX-4). Rebuilt when the selected
+    // comment changes. Comment text lives outside the graph, so edits are not
+    // undo-tracked (same limitation as variable/comment definitions).
+    const auto buildCommentPanel = [&](CommentId cid) -> std::unique_ptr<ui::Widget> {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
+        auto row = std::make_unique<ui::Row>(6.0f);
+        Comment* cm = nullptr;
+        for (Comment& c : project.comments) {
+            if (c.id == cid) {
+                cm = &c;
+                break;
+            }
+        }
+        if (cm != nullptr) {
+            row->Add(std::make_unique<ui::Label>("Comment"));
+            row->Add(std::make_unique<ui::TextField>(
+                cm->text,
+                [&project, cid](const std::string& v) {
+                    for (Comment& c : project.comments) {
+                        if (c.id == cid) {
+                            c.text = v;
+                            break;
+                        }
+                    }
+                },
+                160.0f));
+        } else {
+            row->Add(std::make_unique<ui::Label>("Select a comment"));
+        }
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(row));
+        const ui::Size s = raw->Measure(painter, ui::Size{260.0f, 40.0f});
+        raw->Arrange(ui::Rect{8.0f, initH - 84.0f, s.w + 8.0f, s.h + 8.0f});
+        return panel;
+    };
+    const std::size_t commentIndex = panels.size();
+    panels.push_back(buildCommentPanel(INVALID_ID));
+    CommentId shownComment = INVALID_ID;
+
     // Search panel (top-center): typing centers the view on matching nodes.
     {
         auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
@@ -774,6 +821,7 @@ int main()
         functions.Clear();
         project.variables.clear();
         project.comments.clear();
+        selectedComment = INVALID_ID;
         *project.graph = Graph(types);
         std::vector<std::string> errors;
         LoadProjectFile(path, project, errors);
@@ -915,6 +963,7 @@ int main()
                 }
                 if (hitComment != INVALID_ID) {
                     recordUndo();
+                    selectedComment = hitComment;
                     draggingComment = hitComment;
                     commentLastX = cp.x;
                     commentLastY = cp.y;
@@ -930,6 +979,7 @@ int main()
                         commentGroup = NodesInRect(boxes, ViewRect{c.x, c.y, c.w, c.h});
                     }
                 } else {
+                    selectedComment = INVALID_ID;
                     fsm.OnMouseDown(cp.x, cp.y, graph, layout);
                 }
             } else if (e.type == EditorInputType::MouseUp && e.button == EditorMouseButton::Left) {
@@ -1041,6 +1091,12 @@ int main()
                 shownNode = want;
                 panels[propertyIndex] = buildProperties(want);
             }
+        }
+
+        // Rebuild the comment editor panel when the selected comment changes.
+        if (selectedComment != shownComment) {
+            shownComment = selectedComment;
+            panels[commentIndex] = buildCommentPanel(selectedComment);
         }
 
         window.BeginFrame(0.12f, 0.12f, 0.13f);
