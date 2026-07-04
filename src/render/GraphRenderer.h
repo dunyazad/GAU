@@ -26,4 +26,8 @@ void DrawSelection(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layo
 void DrawDragLink(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layout, PinId fromPin,
                   float dragCanvasX, float dragCanvasY);
 
+// Colored outline around a single node (breakpoints, debug cursor).
+void DrawNodeOutline(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layout, NodeId node,
+                     int r, int g, int b, float width);
+
 } // namespace gau::render

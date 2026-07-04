@@ -9,6 +9,7 @@
 #include "core/TypeRegistry.h"
 #include "exec/Builtins.h"
 #include "exec/Runtime.h"
+#include "interaction/HitTest2.h"
 #include "interaction/InteractionFsm.h"
 #include "model/Graph.h"
 #include "model/NodeClassV2.h"
@@ -121,6 +122,11 @@ int main()
 
     render::Canvas canvas;
 
+    // Debug state: breakpoints and a persistent runtime when stepping.
+    std::vector<NodeId> breakpoints;
+    std::unique_ptr<Runtime> debug;
+    const Runtime::LogFn debugLog = [](const std::string& m) { std::printf("[dbg] %s\n", m.c_str()); };
+
     // Retained UI panels (positioned once against the initial window size).
     bool runRequested = false;
     int spawnCount = 0;
@@ -134,6 +140,25 @@ int main()
         auto column = std::make_unique<ui::Column>(4.0f);
         column->Add(std::make_unique<ui::Button>("Run",
                                                  [&runRequested]() { runRequested = true; }));
+        column->Add(std::make_unique<ui::Button>("Debug", [&]() {
+            debug = std::make_unique<Runtime>(graph, types, classes, builtins, debugLog);
+            for (NodeId bp : breakpoints) {
+                debug->AddBreakpoint(bp);
+            }
+            debug->Start(entry);
+            debug->Run(10000);
+        }));
+        column->Add(std::make_unique<ui::Button>("Step", [&]() {
+            if (debug) {
+                debug->Step();
+            }
+        }));
+        column->Add(std::make_unique<ui::Button>("Continue", [&]() {
+            if (debug) {
+                debug->Continue();
+                debug->Run(10000);
+            }
+        }));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{200.0f, 200.0f});
@@ -216,7 +241,26 @@ int main()
                 continue;
             }
             const render::Vec2 cp = canvas.ScreenToCanvas(render::Vec2{e.x, e.y});
-            if (e.type == EditorInputType::MouseDown && e.button == EditorMouseButton::Left) {
+            if (e.type == EditorInputType::MouseDown && e.button == EditorMouseButton::Left
+                && e.shift) {
+                // Shift-click a node toggles a breakpoint.
+                const NodeId hit = HitTestNode(layout, cp.x, cp.y);
+                if (hit != INVALID_ID) {
+                    bool removed = false;
+                    for (std::size_t k = 0; k < breakpoints.size(); ++k) {
+                        if (breakpoints[k] == hit) {
+                            breakpoints.erase(breakpoints.begin()
+                                              + static_cast<std::ptrdiff_t>(k));
+                            removed = true;
+                            break;
+                        }
+                    }
+                    if (!removed) {
+                        breakpoints.push_back(hit);
+                    }
+                }
+            } else if (e.type == EditorInputType::MouseDown
+                       && e.button == EditorMouseButton::Left) {
                 fsm.OnMouseDown(cp.x, cp.y, graph, layout);
             } else if (e.type == EditorInputType::MouseUp && e.button == EditorMouseButton::Left) {
                 fsm.OnMouseUp(cp.x, cp.y, graph, layout);
@@ -266,6 +310,12 @@ int main()
         render::DrawSelection(vg, canvas, layout, fsm.Selection());
         if (fsm.IsDraggingLink()) {
             render::DrawDragLink(vg, canvas, layout, fsm.DragLinkPin(), fsm.DragX(), fsm.DragY());
+        }
+        for (NodeId bp : breakpoints) {
+            render::DrawNodeOutline(vg, canvas, layout, bp, 220, 50, 50, 2.0f);
+        }
+        if (debug && debug->State() == RunState::Paused) {
+            render::DrawNodeOutline(vg, canvas, layout, debug->CurrentNode(), 60, 220, 90, 3.0f);
         }
         for (const std::unique_ptr<ui::Widget>& p : panels) {
             p->Paint(painter);

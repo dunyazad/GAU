@@ -140,6 +140,24 @@ void DrawSelection(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layo
     nvgRestore(vg);
 }
 
+void DrawNodeOutline(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layout, NodeId node,
+                     int r, int g, int b, float width)
+{
+    const NodeLayout* nl = layout.FindNode(node);
+    if (nl == nullptr) {
+        return;
+    }
+    nvgSave(vg);
+    ApplyCanvas(vg, canvas);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, nl->x - 3.0f, nl->y - 3.0f, nl->w + 6.0f, nl->h + 6.0f, 8.0f);
+    nvgStrokeColor(vg, nvgRGB(static_cast<unsigned char>(r), static_cast<unsigned char>(g),
+                              static_cast<unsigned char>(b)));
+    nvgStrokeWidth(vg, width);
+    nvgStroke(vg);
+    nvgRestore(vg);
+}
+
 void DrawDragLink(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layout, PinId fromPin,
                   float dragCanvasX, float dragCanvasY)
 {
