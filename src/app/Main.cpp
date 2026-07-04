@@ -25,6 +25,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
@@ -87,9 +89,17 @@ static ui::Event Translate(const EditorInputEvent& e)
         break;
     case EditorInputType::KeyDown:
         u.type = ui::EventType::Key;
+        if (e.key == EditorKey::Backspace) {
+            u.key = ui::keys::Backspace;
+        } else if (e.key == EditorKey::Enter) {
+            u.key = ui::keys::Enter;
+        } else if (e.key == EditorKey::Escape) {
+            u.key = ui::keys::Escape;
+        }
         break;
     case EditorInputType::TextInput:
         u.type = ui::EventType::Text;
+        std::memcpy(u.text, e.text, sizeof(u.text));
         break;
     }
     if (e.button == EditorMouseButton::Left) {
@@ -100,6 +110,28 @@ static ui::Event Translate(const EditorInputEvent& e)
         u.button = 2;
     }
     return u;
+}
+
+// Parses an edited property string back into a scalar Value of the pin type.
+static Value ParseValue(const TypeRegistry& types, TypeId id, const std::string& s)
+{
+    const TypeDesc* desc = types.Resolve(id);
+    if (desc == nullptr) {
+        return Value::None();
+    }
+    switch (desc->tag) {
+    case TypeTag::Bool:
+        return Value::Bool(s == "true" || s == "1");
+    case TypeTag::Int:
+    case TypeTag::Enum:
+        return Value::Int(std::strtoll(s.c_str(), nullptr, 10));
+    case TypeTag::Float:
+        return Value::Float(std::strtod(s.c_str(), nullptr));
+    case TypeTag::String:
+        return Value::Str(s);
+    default:
+        return types.MakeDefault(id);
+    }
 }
 
 int main()
@@ -252,6 +284,43 @@ int main()
         panels.push_back(std::move(panel));
     }
 
+    // Property panel (bottom-right): editable fields for the selected node's
+    // properties. Rebuilt when the selection changes.
+    const auto buildProperties = [&](NodeId nodeId) -> std::unique_ptr<ui::Widget> {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
+        auto column = std::make_unique<ui::Column>(4.0f);
+        const Node* node = graph.FindNode(nodeId);
+        const NodeClass* cls = (node != nullptr) ? classes.Find(node->className) : nullptr;
+        if (node != nullptr && cls != nullptr && !node->properties.empty()) {
+            column->Add(std::make_unique<ui::Label>("Properties: " + node->className));
+            for (std::size_t i = 0; i < node->properties.size() && i < cls->properties.size();
+                 ++i) {
+                const TypeId pt = cls->properties[i].type;
+                auto row = std::make_unique<ui::Row>(6.0f);
+                row->Add(std::make_unique<ui::Label>(cls->properties[i].name));
+                row->Add(std::make_unique<ui::TextField>(
+                    ValueToString(node->properties[i]),
+                    [&graph, &types, nodeId, i, pt](const std::string& v) {
+                        Node* n = graph.FindNode(nodeId);
+                        if (n != nullptr && i < n->properties.size()) {
+                            n->properties[i] = ParseValue(types, pt, v);
+                        }
+                    }));
+                column->Add(std::move(row));
+            }
+        } else {
+            column->Add(std::make_unique<ui::Label>("Select a node"));
+        }
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(column));
+        const ui::Size s = raw->Measure(painter, ui::Size{260.0f, 400.0f});
+        raw->Arrange(ui::Rect{initW - s.w - 16.0f, initH - s.h - 16.0f, s.w + 8.0f, s.h + 8.0f});
+        return panel;
+    };
+    const std::size_t propertyIndex = panels.size();
+    panels.push_back(buildProperties(INVALID_ID));
+    NodeId shownNode = INVALID_ID;
+
     const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
         return painter.MeasureText(s, size);
     };
@@ -344,6 +413,16 @@ int main()
                 const Node* first = graph.FindNode(sel[0]);
                 const std::string name = (first != nullptr) ? first->className : "";
                 infoLabel->SetText("Selected " + std::to_string(sel.size()) + ": " + name);
+            }
+        }
+
+        // Rebuild the property panel when the selected node changes.
+        {
+            const std::vector<NodeId>& sel = fsm.Selection();
+            const NodeId want = sel.empty() ? INVALID_ID : sel[0];
+            if (want != shownNode) {
+                shownNode = want;
+                panels[propertyIndex] = buildProperties(want);
             }
         }
 
