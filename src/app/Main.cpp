@@ -251,6 +251,34 @@ int main()
     // The function whose body is being edited (null when editing the main
     // graph); its interface can be grown with Add In / Add Out.
     FunctionDef* editingDef = nullptr;
+    // Scalar type chosen for new parameters/variables (cycled by a button).
+    TypeTag selType = TypeTag::Int;
+    const auto typeName = [](TypeTag t) {
+        switch (t) {
+        case TypeTag::Bool:
+            return "bool";
+        case TypeTag::Int:
+            return "int";
+        case TypeTag::Float:
+            return "float";
+        case TypeTag::String:
+            return "string";
+        default:
+            return "int";
+        }
+    };
+    const auto cycleType = [](TypeTag t) {
+        switch (t) {
+        case TypeTag::Bool:
+            return TypeTag::Int;
+        case TypeTag::Int:
+            return TypeTag::Float;
+        case TypeTag::Float:
+            return TypeTag::String;
+        default:
+            return TypeTag::Bool;
+        }
+    };
     BuiltinRegistry builtins;
     RegisterDemoClasses(classes, types);
     RegisterConversionNodes(classes, builtins, types);
@@ -405,6 +433,11 @@ int main()
             cm.text = "Comment";
             project.comments.push_back(cm);
         }));
+        column->Add(std::make_unique<ui::Button>("Del Comment", [&]() {
+            if (!project.comments.empty()) {
+                project.comments.pop_back();
+            }
+        }));
         column->Add(std::make_unique<ui::Button>("Undo", [&]() {
             if (undoActive()) {
                 fsm.ClearSelection();
@@ -441,14 +474,14 @@ int main()
             if (editingDef != nullptr) {
                 AddFunctionParam(*editingDef, false,
                                  "in" + std::to_string(editingDef->inputs.size() + 1),
-                                 types.Builtin(TypeTag::Int), classes, builtins, types, project);
+                                 types.Builtin(selType), classes, builtins, types, project);
             }
         }));
         column->Add(std::make_unique<ui::Button>("Add Out", [&]() {
             if (editingDef != nullptr) {
                 AddFunctionParam(*editingDef, true,
                                  "out" + std::to_string(editingDef->outputs.size() + 1),
-                                 types.Builtin(TypeTag::Int), classes, builtins, types, project);
+                                 types.Builtin(selType), classes, builtins, types, project);
             }
         }));
         column->Add(std::make_unique<ui::Button>("Del In", [&]() {
@@ -614,8 +647,10 @@ int main()
         panels.push_back(std::move(panel));
     }
 
-    // Variable panel (top-left, under Run): name field + Add makes an int
-    // variable and registers its Get/Set nodes into the palette.
+    // Variable panel (top-left, under Run): name field + Add makes a variable
+    // of the selected type and registers its Get/Set nodes. Type cycles the
+    // scalar type used for both variables and function parameters.
+    ui::Label* typeLabel = nullptr;
     {
         auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
         auto row = std::make_unique<ui::Row>(6.0f);
@@ -633,16 +668,26 @@ int main()
                     return;
                 }
             }
-            VariableDef def{name, types.Builtin(TypeTag::Int)};
+            VariableDef def{name, types.Builtin(selType)};
             project.variables.push_back(def);
             RegisterVariableNodes(classes, builtins, types, def);
             if (rebuildPalette) {
                 rebuildPalette();
             }
         }));
+        row->Add(std::make_unique<ui::Button>("Del Var", [&]() {
+            // Get/Set classes of the removed variable stay registered (unused).
+            if (!project.variables.empty()) {
+                project.variables.pop_back();
+            }
+        }));
+        auto tlabel = std::make_unique<ui::Label>("int");
+        typeLabel = tlabel.get();
+        row->Add(std::make_unique<ui::Button>("Type", [&]() { selType = cycleType(selType); }));
+        row->Add(std::move(tlabel));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(row));
-        const ui::Size s = raw->Measure(painter, ui::Size{260.0f, 40.0f});
+        const ui::Size s = raw->Measure(painter, ui::Size{360.0f, 40.0f});
         raw->Arrange(ui::Rect{8.0f, 230.0f, s.w + 8.0f, s.h + 8.0f});
         panels.push_back(std::move(panel));
     }
@@ -894,6 +939,10 @@ int main()
                        [](const std::string& m) { std::printf("[run] %s\n", m.c_str()); });
             rt.Start(entry);
             rt.Run(10000);
+        }
+
+        if (typeLabel != nullptr) {
+            typeLabel->SetText(typeName(selType));
         }
 
         if (infoLabel != nullptr) {
