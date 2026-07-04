@@ -40,24 +40,46 @@ build/Debug/gau2.exe                    # v2 앱
   드래그 링크, shift+클릭 브레이크포인트, Debug/Step/Continue, Run(VM),
   Collapse(선택 -> 함수). 우드래그 팬 / 휠 줌.
 
-## 완료
+## 완료 (기능 로직 + 단위 테스트)
 
-- **서브그래프 / 함수 노드** (FR-REU-1) — 완료. FunctionDef/FunctionRegistry,
-  FunctionNodes(Entry/Return/Call 자동생성 + 중첩 Runtime 마샬링), FunctionOps
-  (collapse/expand), 직렬화(functions 배열), gau2 Collapse 버튼 + 팔레트.
-  테스트 4종 통과. 남은 후속: 함수 본문을 별도 캔버스에서 편집하는 UI(현재는
-  collapse/코드로만 본문 구성), expand 의 gau2 버튼(현재 API 만 존재).
+- **FR-REU-1 서브그래프/함수 노드** — FunctionDef/FunctionRegistry, FunctionNodes
+  (Entry/Return/Call 자동생성 + 중첩 Runtime 마샬링, 재귀 깊이 제한, exec 출력 래치),
+  FunctionOps(collapse/expand), 직렬화, gau2 Collapse 버튼 + 팔레트.
+  `function_nodes_tests`, `function_ops_tests`, `function_serialize_tests`.
+- **FR-TYP-3 타입 변환 노드** — ConversionNodes(스칼라 변환 빌트인 + SuggestConversion).
+  `conversion_nodes_tests`.
+- **FR-REU-2 지역 변수** — VariableDef(Project) + VariableNodes(Get/Set) + Runtime
+  변수 저장소(스텝 간 유지, Start 시 초기화). `variable_nodes_tests`.
+- **FR-EXE-4 실행 오류 진단** — RunError(kind+node+message): NodeNotFound,
+  StepLimitExceeded. `exec_vm_tests`.
+- **FR-PRJ-1/3 프로젝트 파일 + 스키마 버전** — ProjectFile(SaveProjectFile/
+  LoadProjectFile/LoadProjectText), schemaVersion=2, 함수/변수/코멘트 직렬화, 암시적
+  마이그레이션. `project_file_tests`.
+- **FR-UX-3 정렬** — Align(6방향 + 분배, 순수 좌표). `align_tests`.
+- **FR-UX-2 검색/포커스** — NodeSearch(부분일치 + 포커스 바운드). `node_search_tests`.
+- **FR-UX-1 미니맵 + FR-UX-4 코멘트** — Minimap(fit 변환 + NodesInRect 그룹핑),
+  Comment 모델 + 직렬화. `minimap_tests`.
 
-## 남은 작업 (우선순위 순)
+전체 21개 스위트 통과. 위 로직은 라이브러리 + 테스트로 완성됐고, gau2 UI 배선(버튼/
+패널/렌더)은 Collapse 만 연결됨 -- 나머지는 아래 참조.
 
-1. **인라인 값 편집** — ui 에 TextField 위젯 추가, 프로퍼티/핀 기본값 편집. gau2 에
-   프로퍼티 패널(선택 노드 필드 편집).
-2. **타입 변환 노드 / 자동 변환 제안** (FR-TYP-3).
-3. **UX** — 미니맵, 노드 검색/포커스, 정렬(6방향/분배)을 v2 로 이식, 코멘트 박스.
-4. **직렬화 파일 I/O** — ExportProject 결과를 파일 저장 + 로드 UI, 스키마 버전 필드.
-   (함수 로드 후 각 FunctionDef 에 RegisterFunctionNodes 재바인딩 필요 -- app 책임.)
-5. **함수 편집 UI** — 함수 본문 캔버스, expand 버튼, 함수 인터페이스 편집.
-6. **Apple/터치** (M12).
+## 남은 작업 (gau2 UI 배선, 로직은 준비됨)
+
+1. **인라인 값 편집** — ui TextField 위젯 + 프로퍼티 패널(선택 노드 필드 편집). 유일하게
+   로직도 미구현.
+2. **UI 배선** — 아래 완성된 라이브러리를 gau2 에 연결(버튼/렌더):
+   - 정렬(Align), 검색(NodeSearch), 미니맵(Minimap) 렌더, 코멘트 박스 렌더/드래그,
+     타입 변환 자동 삽입(SuggestConversion, 링크 드롭 시), 변수 패널(Get/Set 생성),
+     파일 저장/로드 다이얼로그(PlatformFileDialog 존재), Expand 버튼.
+3. **함수 편집 UI** — 함수 본문 캔버스, 인터페이스 편집.
+
+## 환경 제약으로 보류 (Windows 개발 환경서 검증 불가)
+
+- **FR-WASM-1~3 커스텀/Wasm 노드** — v1 의 WasmRuntime(wasm3)/ExecEngine 은 존재하나
+  v2 Runtime 에 미통합. 함수 런타임 빌드에 LLVM(clang wasm32) 필요. 배선은 가능하나
+  실행 검증 불가.
+- **FR-PLT-1~2 Apple/터치** (M12) — PlatformNVG 에 Metal(__APPLE__) 분기는 있으나
+  .mm/ios 프로젝트 없음. macOS/Xcode/Metal 필요, Windows 서 빌드/실행 불가.
 
 ## 관례
 
