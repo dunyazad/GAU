@@ -34,6 +34,8 @@ public:
     void DefineStruct(StructDef def);
     const EnumDef* FindEnum(const std::string& name) const;
     const StructDef* FindStruct(const std::string& name) const;
+    const std::vector<EnumDef>& Enums() const { return enums; }
+    const std::vector<StructDef>& Structs() const { return structs; }
 
     // Zero value for a type: scalars/enum, empty containers, or a struct
     // with each field defaulted (recursive).
