@@ -156,6 +156,7 @@ add_library(gau_interaction STATIC
     src/interaction/InteractionFsm.cpp
     src/interaction/Align.cpp
     src/interaction/NodeSearch.cpp
+    src/interaction/Minimap.cpp
 )
 target_include_directories(gau_interaction PUBLIC src)
 target_link_libraries(gau_interaction PUBLIC gau_render gau_model gau_core)
@@ -276,6 +277,11 @@ add_executable(node_search_tests tests/NodeSearchTests.cpp)
 target_include_directories(node_search_tests PRIVATE src)
 target_link_libraries(node_search_tests PRIVATE gau_interaction)
 add_test(NAME node_search_tests COMMAND node_search_tests)
+
+add_executable(minimap_tests tests/MinimapTests.cpp)
+target_include_directories(minimap_tests PRIVATE src)
+target_link_libraries(minimap_tests PRIVATE gau_interaction)
+add_test(NAME minimap_tests COMMAND minimap_tests)
 
 add_executable(canvas_tests
     tests/CanvasTests.cpp

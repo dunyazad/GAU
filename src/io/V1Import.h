@@ -5,6 +5,7 @@
 // files. Errors are appended rather than thrown (no exceptions policy).
 
 #include "core/TypeRegistry.h"
+#include "model/Comment.h"
 #include "model/Function.h"
 #include "model/Graph.h"
 #include "model/NodeClassV2.h"
@@ -42,5 +43,9 @@ void ImportFunctions(const std::string& jsonText, FunctionRegistry& functions,
 // Loads a "variables" array (name + type) into the definition list.
 void ImportVariables(const std::string& jsonText, std::vector<VariableDef>& variables,
                      TypeRegistry& types, std::vector<std::string>& errors);
+
+// Loads a "comments" array into the list, assigning sequential ids.
+void ImportComments(const std::string& jsonText, std::vector<Comment>& comments,
+                    std::vector<std::string>& errors);
 
 } // namespace gau

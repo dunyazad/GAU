@@ -93,6 +93,8 @@ static void TestFileRoundTrip()
     // Fold Add into a function; the Call node keeps feeding Set gain.
     CollapseSelection(g, a.types, a.classes, builtinsA, a.functions, {add}, "AddFn");
 
+    a.comments.push_back(Comment{1, 12.0f, 34.0f, 200.0f, 120.0f, "group note"});
+
     const std::string path = "gau_project_test.tmp.json";
     Check(SaveProjectFile(path, a), "save project file");
 
@@ -102,6 +104,7 @@ static void TestFileRoundTrip()
     Check(errors.empty(), "load without errors");
     Check(b.functions.Find("AddFn") != nullptr, "function survived file round-trip");
     Check(b.variables.size() == 1 && b.variables[0].name == "gain", "variable survived");
+    Check(b.comments.size() == 1 && b.comments[0].text == "group note", "comment survived");
 
     // Confirm the schema version is what we wrote.
     Project schemaCheck;

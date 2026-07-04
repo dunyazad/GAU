@@ -36,6 +36,7 @@ int LoadProjectText(const std::string& text, Project& project, std::vector<std::
     ImportV1Definitions(text, project.types, project.classes, errors);
     ImportFunctions(text, project.functions, project.classes, project.types, errors);
     ImportVariables(text, project.variables, project.types, errors);
+    ImportComments(text, project.comments, errors);
     ImportV1Graph(text, *project.graph, project.classes, project.types, errors);
     return version;
 }

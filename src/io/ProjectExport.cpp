@@ -260,6 +260,21 @@ static json ExportVariables(const Project& project)
     return array;
 }
 
+static json ExportComments(const Project& project)
+{
+    json array = json::array();
+    for (const Comment& c : project.comments) {
+        json entry;
+        entry["x"] = c.x;
+        entry["y"] = c.y;
+        entry["w"] = c.w;
+        entry["h"] = c.h;
+        entry["text"] = c.text;
+        array.push_back(entry);
+    }
+    return array;
+}
+
 std::string ExportProject(const Project& project)
 {
     json root;
@@ -268,6 +283,7 @@ std::string ExportProject(const Project& project)
     root["nodeClasses"] = ExportClasses(project.types, project.classes);
     root["functions"] = ExportFunctions(project);
     root["variables"] = ExportVariables(project);
+    root["comments"] = ExportComments(project);
     const json graphJson = ExportGraphJson(*project.graph, project.types, project.classes);
     root["nodes"] = graphJson["nodes"];
     root["links"] = graphJson["links"];

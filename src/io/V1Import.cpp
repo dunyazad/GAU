@@ -415,4 +415,32 @@ void ImportVariables(const std::string& jsonText, std::vector<VariableDef>& vari
     }
 }
 
+void ImportComments(const std::string& jsonText, std::vector<Comment>& comments,
+                    std::vector<std::string>& errors)
+{
+    const json root = json::parse(jsonText, nullptr, false);
+    if (root.is_discarded() || !root.is_object()) {
+        errors.push_back("invalid JSON");
+        return;
+    }
+    if (!root.contains("comments") || !root["comments"].is_array()) {
+        return;
+    }
+    std::uint32_t nextId = 1;
+    for (const json& c : root["comments"]) {
+        if (!c.is_object()) {
+            continue;
+        }
+        Comment comment;
+        comment.id = nextId++;
+        comment.x = c.contains("x") ? c["x"].get<float>() : 0.0f;
+        comment.y = c.contains("y") ? c["y"].get<float>() : 0.0f;
+        comment.w = c.contains("w") ? c["w"].get<float>() : 200.0f;
+        comment.h = c.contains("h") ? c["h"].get<float>() : 120.0f;
+        comment.text = c.contains("text") && c["text"].is_string() ? c["text"].get<std::string>()
+                                                                    : "";
+        comments.push_back(std::move(comment));
+    }
+}
+
 } // namespace gau

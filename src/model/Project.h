@@ -4,6 +4,7 @@
 // graph as a single save/edit unit. Non-copyable because the graph holds a
 // pointer to this project's type registry.
 
+#include "Comment.h"
 #include "Function.h"
 #include "Graph.h"
 #include "NodeClassV2.h"
@@ -22,6 +23,7 @@ struct Project
     NodeClassRegistry classes;
     FunctionRegistry functions;
     std::vector<VariableDef> variables;
+    std::vector<Comment> comments;
     std::unique_ptr<Graph> graph;
 
     Project() : graph(std::make_unique<Graph>(types)) {}
