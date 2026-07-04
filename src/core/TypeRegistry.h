@@ -16,6 +16,11 @@ class TypeRegistry
 public:
     TypeRegistry();
 
+    // Resets to the initial state (only the builtin scalar types), dropping
+    // all interned/user types. Used when loading a project into an existing
+    // registry without invalidating references to it.
+    void Clear();
+
     // Builtin scalar type id for Exec/Bool/Int/Float/String/Object.
     TypeId Builtin(TypeTag tag) const;
 

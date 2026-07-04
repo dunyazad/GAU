@@ -55,6 +55,7 @@ public:
     const FunctionDef* Find(const std::string& name) const;
     FunctionDef* Find(const std::string& name);
     const std::vector<std::unique_ptr<FunctionDef>>& All() const { return defs; }
+    void Clear() { defs.clear(); }
 
 private:
     std::vector<std::unique_ptr<FunctionDef>> defs;

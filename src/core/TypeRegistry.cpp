@@ -55,6 +55,14 @@ static int BuiltinSlot(TypeTag tag)
 
 TypeRegistry::TypeRegistry()
 {
+    Clear();
+}
+
+void TypeRegistry::Clear()
+{
+    descs.clear();
+    enums.clear();
+    structs.clear();
     // Index 0 is the invalid sentinel.
     descs.push_back(TypeDesc{});
     const TypeTag builtins[6] = {TypeTag::Exec,  TypeTag::Bool,   TypeTag::Int,

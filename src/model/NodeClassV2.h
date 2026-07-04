@@ -48,6 +48,7 @@ public:
     void Register(NodeClass nodeClass);
     const NodeClass* Find(const std::string& name) const;
     const std::vector<NodeClass>& All() const { return classes; }
+    void Clear() { classes.clear(); }
 
 private:
     std::vector<NodeClass> classes;

@@ -183,9 +183,10 @@ add_executable(gau2
     src/platform/PlatformWindow.cpp
     src/platform/PlatformNVG.cpp
     src/platform/PlatformInput.cpp
+    src/platform/PlatformFileDialog.cpp
 )
 target_include_directories(gau2 PRIVATE src external)
-target_link_libraries(gau2 PRIVATE SDL3::SDL3-static nanovg gau_render gau_exec gau_interaction)
+target_link_libraries(gau2 PRIVATE SDL3::SDL3-static nanovg gau_render gau_exec gau_interaction gau_io)
 if(MSVC)
     target_compile_definitions(gau2 PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()

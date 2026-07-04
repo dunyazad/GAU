@@ -67,6 +67,20 @@ static void TestUserTypes()
     CheckStr(reg.TypeName(reg.ArrayOf(vecId)), "Array<Vector3f>", "nested container name");
 }
 
+static void TestClearResetsRegistry()
+{
+    TypeRegistry reg;
+    reg.DefineStruct(StructDef{"Vector3f", {{"x", reg.Builtin(TypeTag::Float)}}});
+    Check(reg.FindStruct("Vector3f") != nullptr, "struct defined before clear");
+
+    reg.Clear();
+    Check(reg.FindStruct("Vector3f") == nullptr, "user types dropped by clear");
+    Check(reg.Structs().empty() && reg.Enums().empty(), "user type lists emptied");
+    // Builtins still resolve and interning still works after clear.
+    Check(reg.Resolve(reg.Builtin(TypeTag::Int))->tag == TypeTag::Int, "int builtin still valid");
+    Check(reg.Builtin(TypeTag::Bool) != INVALID_TYPE, "bool builtin re-interned");
+}
+
 static void TestDefaults()
 {
     TypeRegistry reg;
@@ -112,6 +126,7 @@ int main()
 {
     TestBuiltinsAndInterning();
     TestUserTypes();
+    TestClearResetsRegistry();
     TestDefaults();
     TestValueEqualityAndString();
     if (failCount == 0) {

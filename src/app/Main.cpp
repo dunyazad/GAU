@@ -3,19 +3,27 @@
 // a Run button that executes the graph through the v2 runtime. Assembly
 // grows into Application/Document/InputRouter in later slices.
 
+#include "platform/PlatformFileDialog.h"
 #include "platform/PlatformNVG.h"
 #include "platform/PlatformWindow.h"
 
 #include "core/TypeRegistry.h"
 #include "exec/Builtins.h"
+#include "exec/ConversionNodes.h"
+#include "exec/FunctionNodes.h"
 #include "exec/FunctionOps.h"
 #include "exec/Runtime.h"
+#include "exec/StructNodes.h"
+#include "exec/VariableNodes.h"
 #include "interaction/Align.h"
 #include "interaction/HitTest2.h"
 #include "interaction/InteractionFsm.h"
+#include "io/ProjectExport.h"
+#include "io/ProjectFile.h"
 #include "model/Function.h"
 #include "model/Graph.h"
 #include "model/NodeClassV2.h"
+#include "model/Project.h"
 #include "render/GraphLayout.h"
 #include "render/GraphRenderer.h"
 #include "render/NanoVgPainter.h"
@@ -57,6 +65,16 @@ static void RegisterDemoClasses(NodeClassRegistry& classes, const TypeRegistry& 
                          {{PinDirection::Input, exec, "Exec"},
                           {PinDirection::Input, i, "Value"},
                           {PinDirection::Output, exec, "Then"}}));
+}
+
+static NodeId FindByClass(const Graph& graph, const std::string& className)
+{
+    for (const Node& n : graph.Nodes()) {
+        if (n.className == className) {
+            return n.id;
+        }
+    }
+    return INVALID_ID;
 }
 
 static NodeId BuildDemoGraph(Graph& graph, const NodeClassRegistry& classes)
@@ -148,14 +166,19 @@ int main()
     }
     render::NanoVgPainter painter(vg, "sans");
 
-    TypeRegistry types;
-    NodeClassRegistry classes;
-    RegisterDemoClasses(classes, types);
+    // The editable project (types, classes, functions, variables, comments,
+    // graph) is one save/load unit; references keep the rest of the code
+    // terse. Runtime behaviors live in a separate builtins registry.
+    Project project;
+    TypeRegistry& types = project.types;
+    NodeClassRegistry& classes = project.classes;
+    FunctionRegistry& functions = project.functions;
+    Graph& graph = *project.graph;
     BuiltinRegistry builtins;
+    RegisterDemoClasses(classes, types);
+    RegisterConversionNodes(classes, builtins, types);
     RegisterDemoBuiltins(builtins);
-    FunctionRegistry functions;
-    Graph graph(types);
-    const NodeId entry = BuildDemoGraph(graph, classes);
+    NodeId entry = BuildDemoGraph(graph, classes);
 
     render::Canvas canvas;
 
@@ -166,6 +189,23 @@ int main()
     std::function<void()> rebuildPalette;
     const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
         return painter.MeasureText(s, size);
+    };
+
+    // Re-registers all runtime behaviors after a load (or on demand). The
+    // builtins registry is reset first so nothing stale survives.
+    const auto rebindBehaviors = [&]() {
+        builtins = BuiltinRegistry{};
+        RegisterDemoBuiltins(builtins);
+        RegisterConversionNodes(classes, builtins, types);
+        for (const StructDef& s : types.Structs()) {
+            RegisterStructNodes(classes, builtins, types, s);
+        }
+        for (const auto& fp : functions.All()) {
+            RegisterFunctionNodes(classes, builtins, types, *fp);
+        }
+        for (const VariableDef& v : project.variables) {
+            RegisterVariableNodes(classes, builtins, types, v);
+        }
     };
 
     // Applies an alignment/distribution to the selection using the current
@@ -258,6 +298,12 @@ int main()
             "Align T", [&applyAlign]() { applyAlign(false, AlignMode::Top, false); }));
         column->Add(std::make_unique<ui::Button>(
             "Distribute H", [&applyAlign]() { applyAlign(true, AlignMode::Left, true); }));
+        column->Add(std::make_unique<ui::Button>("Save", [&window]() {
+            ShowGraphFileDialog(window.GetSDLWindow(), FileDialogType::SaveGraph);
+        }));
+        column->Add(std::make_unique<ui::Button>("Load", [&window]() {
+            ShowGraphFileDialog(window.GetSDLWindow(), FileDialogType::OpenGraph);
+        }));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{200.0f, 200.0f});
@@ -363,6 +409,32 @@ int main()
     panels.push_back(buildProperties(INVALID_ID));
     NodeId shownNode = INVALID_ID;
 
+    // Save/load the whole project. Load resets the registries in place (so
+    // references stay valid), re-imports, then rebinds behaviors and rebuilds
+    // dependent UI.
+    const auto saveProject = [&](const std::string& path) { SaveProjectFile(path, project); };
+    const auto loadProject = [&](const std::string& path) {
+        types.Clear();
+        classes.Clear();
+        functions.Clear();
+        project.variables.clear();
+        project.comments.clear();
+        *project.graph = Graph(types);
+        std::vector<std::string> errors;
+        LoadProjectFile(path, project, errors);
+        for (const std::string& e : errors) {
+            std::printf("[load] %s\n", e.c_str());
+        }
+        rebindBehaviors();
+        entry = FindByClass(graph, "EventBegin");
+        fsm.ClearSelection();
+        breakpoints.clear();
+        shownNode = INVALID_ID;
+        if (rebuildPalette) {
+            rebuildPalette();
+        }
+    };
+
     std::vector<EditorInputEvent> events;
     bool panning = false;
     float lastX = 0.0f;
@@ -371,6 +443,17 @@ int main()
     for (;;) {
         if (!window.PumpEvents(events)) {
             break;
+        }
+        FileDialogResult dialog;
+        while (PollFileDialogResult(dialog)) {
+            if (!dialog.accepted) {
+                continue;
+            }
+            if (dialog.type == FileDialogType::SaveGraph) {
+                saveProject(dialog.path);
+            } else {
+                loadProject(dialog.path);
+            }
         }
         const float screenW = static_cast<float>(window.GetWidth());
         const float screenH = static_cast<float>(window.GetHeight());
