@@ -42,6 +42,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -264,7 +265,12 @@ int main()
     InteractionFsm fsm;
     int funcCount = 0;
     std::function<void()> rebuildPalette;
-    UndoHistory history;
+    // One undo history per graph (main graph and each function body) so
+    // switching edit context preserves each graph's history.
+    std::map<Graph*, UndoHistory> histories;
+    const auto recordUndo = [&]() { histories[active].Record(*active); };
+    const auto undoActive = [&]() { return histories[active].Undo(*active); };
+    const auto redoActive = [&]() { return histories[active].Redo(*active); };
     const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
         return painter.MeasureText(s, size);
     };
@@ -293,7 +299,7 @@ int main()
         if (sel.size() < 2) {
             return;
         }
-        history.Record(*active);
+        recordUndo();
         const render::GraphLayout layout = render::ComputeGraphLayout(*active, classes, measure);
         std::vector<NodeBox> boxes;
         for (NodeId id : sel) {
@@ -356,7 +362,7 @@ int main()
                 return;
             }
             const std::string name = "Func" + std::to_string(++funcCount);
-            history.Record(*active);
+            recordUndo();
             const NodeId call =
                 CollapseSelection(*active, types, classes, builtins, functions, sel, name);
             if (call != INVALID_ID) {
@@ -371,7 +377,7 @@ int main()
             if (sel.empty()) {
                 return;
             }
-            history.Record(*active);
+            recordUndo();
             if (ExpandCall(*active, types, classes, functions, sel[0])) {
                 fsm.ClearSelection();
             }
@@ -400,12 +406,12 @@ int main()
             project.comments.push_back(cm);
         }));
         column->Add(std::make_unique<ui::Button>("Undo", [&]() {
-            if (history.Undo(*active)) {
+            if (undoActive()) {
                 fsm.ClearSelection();
             }
         }));
         column->Add(std::make_unique<ui::Button>("Redo", [&]() {
-            if (history.Redo(*active)) {
+            if (redoActive()) {
                 fsm.ClearSelection();
             }
         }));
@@ -424,14 +430,12 @@ int main()
             editingDef = def;
             editContext = def->name;
             fsm.ClearSelection();
-            history.Clear();
         }));
         column->Add(std::make_unique<ui::Button>("Main", [&]() {
             active = project.graph.get();
             editingDef = nullptr;
             editContext = "main";
             fsm.ClearSelection();
-            history.Clear();
         }));
         column->Add(std::make_unique<ui::Button>("Add In", [&]() {
             if (editingDef != nullptr) {
@@ -490,7 +494,7 @@ int main()
             }
             column->Add(std::make_unique<ui::Button>(
                 "+ " + name,
-                [&active, &classes, &canvas, &window, &spawnCount, &history, name]() {
+                [&active, &classes, &canvas, &window, &spawnCount, &recordUndo, name]() {
                     const NodeClass* cls = classes.Find(name);
                     if (cls == nullptr) {
                         return;
@@ -499,7 +503,7 @@ int main()
                         static_cast<float>(window.GetWidth()) * 0.5f,
                         static_cast<float>(window.GetHeight()) * 0.5f});
                     const float offset = static_cast<float>(spawnCount % 8) * 24.0f;
-                    history.Record(*active);
+                    recordUndo();
                     active->AddNode(*cls, center.x + offset, center.y + offset);
                     ++spawnCount;
                 }));
@@ -550,11 +554,11 @@ int main()
                 row->Add(std::make_unique<ui::Label>(cls->properties[i].name));
                 row->Add(std::make_unique<ui::TextField>(
                     ValueToString(node->properties[i]),
-                    [&active, &types, &history, recorded, nodeId, i, pt](const std::string& v) {
+                    [&active, &types, &recordUndo, recorded, nodeId, i, pt](const std::string& v) {
                         Node* n = active->FindNode(nodeId);
                         if (n != nullptr && i < n->properties.size()) {
                             if (!*recorded) {
-                                history.Record(*active);
+                                recordUndo();
                                 *recorded = true;
                             }
                             n->properties[i] = ParseValue(types, pt, v);
@@ -667,7 +671,7 @@ int main()
         fsm.ClearSelection();
         breakpoints.clear();
         shownNode = INVALID_ID;
-        history.Clear();
+        histories.clear();
         if (rebuildPalette) {
             rebuildPalette();
         }
@@ -792,7 +796,7 @@ int main()
                     }
                 }
                 if (hitComment != INVALID_ID) {
-                    history.Record(graph);
+                    recordUndo();
                     draggingComment = hitComment;
                     commentLastX = cp.x;
                     commentLastY = cp.y;
@@ -817,7 +821,7 @@ int main()
                 // directly but a scalar converter exists, drop one between
                 // them instead.
                 if (fsm.IsDraggingLink()) {
-                    history.Record(graph);
+                    recordUndo();
                     const PinId src = fsm.DragLinkPin();
                     const PinId dst = HitTestPin(layout, cp.x, cp.y, 10.0f);
                     if (dst != INVALID_ID && !graph.CanConnect(src, dst)) {
@@ -862,7 +866,7 @@ int main()
                     // never moves records nothing).
                     if (fsm.GetState() == InteractionFsm::State::DraggingNodes
                         && !dragRecorded) {
-                        history.Record(graph);
+                        recordUndo();
                         dragRecorded = true;
                     }
                     fsm.OnMouseMove(cp.x, cp.y, graph, layout);
@@ -870,12 +874,12 @@ int main()
             } else if (e.type == EditorInputType::MouseWheel) {
                 canvas.ZoomAt(render::Vec2{e.x, e.y}, std::pow(1.1f, e.wheelDelta));
             } else if (e.type == EditorInputType::KeyDown && e.key == EditorKey::Undo) {
-                if (history.Undo(graph)) {
+                if (undoActive()) {
                     fsm.ClearSelection();
                     shownNode = INVALID_ID;
                 }
             } else if (e.type == EditorInputType::KeyDown && e.key == EditorKey::Redo) {
-                if (history.Redo(graph)) {
+                if (redoActive()) {
                     fsm.ClearSelection();
                     shownNode = INVALID_ID;
                 }
