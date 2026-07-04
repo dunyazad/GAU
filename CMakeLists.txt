@@ -41,6 +41,7 @@ add_library(gau_model STATIC
     src/model/Graph.cpp
     src/model/NodeClassV2.cpp
     src/model/Function.cpp
+    src/model/UndoHistory.cpp
 )
 target_include_directories(gau_model PUBLIC src)
 target_link_libraries(gau_model PUBLIC gau_core)
@@ -203,6 +204,11 @@ add_executable(model_tests tests/ModelTests.cpp)
 target_include_directories(model_tests PRIVATE src)
 target_link_libraries(model_tests PRIVATE gau_model)
 add_test(NAME model_tests COMMAND model_tests)
+
+add_executable(undo_history_tests tests/UndoHistoryTests.cpp)
+target_include_directories(undo_history_tests PRIVATE src)
+target_link_libraries(undo_history_tests PRIVATE gau_model)
+add_test(NAME undo_history_tests COMMAND undo_history_tests)
 
 add_executable(exec_vm_tests tests/ExecVmTests.cpp)
 target_include_directories(exec_vm_tests PRIVATE src)
