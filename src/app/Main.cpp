@@ -9,6 +9,7 @@
 #include "core/TypeRegistry.h"
 #include "exec/Builtins.h"
 #include "exec/Runtime.h"
+#include "interaction/InteractionFsm.h"
 #include "model/Graph.h"
 #include "model/NodeClassV2.h"
 #include "render/GraphLayout.h"
@@ -130,6 +131,11 @@ int main()
     const ui::Size panelSize = panelRaw->Measure(painter, ui::Size{200.0f, 200.0f});
     panelRaw->Arrange(ui::Rect{8.0f, 8.0f, panelSize.w + 8.0f, panelSize.h + 8.0f});
 
+    InteractionFsm fsm;
+    const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
+        return painter.MeasureText(s, size);
+    };
+
     std::vector<EditorInputEvent> events;
     bool panning = false;
     float lastX = 0.0f;
@@ -142,23 +148,35 @@ int main()
         const float screenW = static_cast<float>(window.GetWidth());
         const float screenH = static_cast<float>(window.GetHeight());
 
+        // Layout from current node positions; hit testing reads it.
+        const render::GraphLayout layout = render::ComputeGraphLayout(graph, classes, measure);
+
         for (const EditorInputEvent& e : events) {
             const ui::Event ue = Translate(e);
-            const bool uiHandled = panelRaw->OnEvent(ue);
-            if (uiHandled) {
+            if (panelRaw->OnEvent(ue)) {
                 continue;
             }
-            if (e.type == EditorInputType::MouseDown && e.button == EditorMouseButton::Right) {
+            const render::Vec2 cp = canvas.ScreenToCanvas(render::Vec2{e.x, e.y});
+            if (e.type == EditorInputType::MouseDown && e.button == EditorMouseButton::Left) {
+                fsm.OnMouseDown(cp.x, cp.y, graph, layout);
+            } else if (e.type == EditorInputType::MouseUp && e.button == EditorMouseButton::Left) {
+                fsm.OnMouseUp(cp.x, cp.y, graph, layout);
+            } else if (e.type == EditorInputType::MouseDown
+                       && e.button == EditorMouseButton::Right) {
                 panning = true;
                 lastX = e.x;
                 lastY = e.y;
             } else if (e.type == EditorInputType::MouseUp
                        && e.button == EditorMouseButton::Right) {
                 panning = false;
-            } else if (e.type == EditorInputType::MouseMove && panning) {
-                canvas.PanByScreenDelta(e.x - lastX, e.y - lastY);
-                lastX = e.x;
-                lastY = e.y;
+            } else if (e.type == EditorInputType::MouseMove) {
+                if (panning) {
+                    canvas.PanByScreenDelta(e.x - lastX, e.y - lastY);
+                    lastX = e.x;
+                    lastY = e.y;
+                } else {
+                    fsm.OnMouseMove(cp.x, cp.y, graph, layout);
+                }
             } else if (e.type == EditorInputType::MouseWheel) {
                 canvas.ZoomAt(render::Vec2{e.x, e.y}, std::pow(1.1f, e.wheelDelta));
             }
@@ -172,14 +190,13 @@ int main()
             rt.Run(10000);
         }
 
-        const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
-            return painter.MeasureText(s, size);
-        };
-        const render::GraphLayout layout = render::ComputeGraphLayout(graph, classes, measure);
-
         window.BeginFrame(0.12f, 0.12f, 0.13f);
         nvgBeginFrame(vg, screenW, screenH, window.GetPixelRatio());
         render::DrawGraph(vg, canvas, graph, types, layout);
+        render::DrawSelection(vg, canvas, layout, fsm.Selection());
+        if (fsm.IsDraggingLink()) {
+            render::DrawDragLink(vg, canvas, layout, fsm.DragLinkPin(), fsm.DragX(), fsm.DragY());
+        }
         panelRaw->Paint(painter);
         nvgEndFrame(vg);
         window.EndFrame();

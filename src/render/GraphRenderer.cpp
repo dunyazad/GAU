@@ -114,4 +114,51 @@ void DrawGraph(NVGcontext* vg, const Canvas& canvas, const Graph& graph,
     nvgRestore(vg);
 }
 
+static void ApplyCanvas(NVGcontext* vg, const Canvas& canvas)
+{
+    const Vec2 pan = canvas.Pan();
+    nvgTranslate(vg, pan.x, pan.y);
+    nvgScale(vg, canvas.Zoom(), canvas.Zoom());
+}
+
+void DrawSelection(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layout,
+                   const std::vector<NodeId>& selection)
+{
+    nvgSave(vg);
+    ApplyCanvas(vg, canvas);
+    for (NodeId id : selection) {
+        const NodeLayout* nl = layout.FindNode(id);
+        if (nl == nullptr) {
+            continue;
+        }
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, nl->x - 2.0f, nl->y - 2.0f, nl->w + 4.0f, nl->h + 4.0f, 7.0f);
+        nvgStrokeColor(vg, nvgRGB(255, 180, 40));
+        nvgStrokeWidth(vg, 2.0f);
+        nvgStroke(vg);
+    }
+    nvgRestore(vg);
+}
+
+void DrawDragLink(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layout, PinId fromPin,
+                  float dragCanvasX, float dragCanvasY)
+{
+    const PinLayout* from = layout.FindPin(fromPin);
+    if (from == nullptr) {
+        return;
+    }
+    nvgSave(vg);
+    ApplyCanvas(vg, canvas);
+    const float dx = dragCanvasX - from->x;
+    const float tangent = (dx < 200.0f && dx > -200.0f) ? 100.0f : dx * 0.5f;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, from->x, from->y);
+    nvgBezierTo(vg, from->x + tangent, from->y, dragCanvasX - tangent, dragCanvasY, dragCanvasX,
+                dragCanvasY);
+    nvgStrokeColor(vg, nvgRGBA(230, 230, 230, 200));
+    nvgStrokeWidth(vg, 2.0f);
+    nvgStroke(vg);
+    nvgRestore(vg);
+}
+
 } // namespace gau::render

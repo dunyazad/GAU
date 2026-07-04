@@ -19,4 +19,11 @@ namespace gau::render {
 void DrawGraph(NVGcontext* vg, const Canvas& canvas, const Graph& graph,
                const TypeRegistry& types, const GraphLayout& layout);
 
+// Overlay: selection outlines and the in-progress link wire. Drawn after
+// DrawGraph with the same canvas transform.
+void DrawSelection(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layout,
+                   const std::vector<NodeId>& selection);
+void DrawDragLink(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layout, PinId fromPin,
+                  float dragCanvasX, float dragCanvasY);
+
 } // namespace gau::render

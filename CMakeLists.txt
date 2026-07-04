@@ -144,6 +144,17 @@ add_custom_command(TARGET gau POST_BUILD
             $<TARGET_FILE_DIR:gau>
 )
 
+# --- gau_interaction (v2 hit test + interaction FSM) ---
+add_library(gau_interaction STATIC
+    src/interaction/HitTest2.cpp
+    src/interaction/InteractionFsm.cpp
+)
+target_include_directories(gau_interaction PUBLIC src)
+target_link_libraries(gau_interaction PUBLIC gau_render gau_model gau_core)
+if(MSVC)
+    target_compile_definitions(gau_interaction PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- gau_io (v2 serialization / v1 import) ---
 add_library(gau_io STATIC
     src/io/V1Import.cpp
@@ -163,7 +174,7 @@ add_executable(gau2
     src/platform/PlatformInput.cpp
 )
 target_include_directories(gau2 PRIVATE src external)
-target_link_libraries(gau2 PRIVATE SDL3::SDL3-static nanovg gau_render gau_exec)
+target_link_libraries(gau2 PRIVATE SDL3::SDL3-static nanovg gau_render gau_exec gau_interaction)
 if(MSVC)
     target_compile_definitions(gau2 PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -200,6 +211,11 @@ add_executable(import_tests tests/ImportTests.cpp)
 target_include_directories(import_tests PRIVATE src external)
 target_link_libraries(import_tests PRIVATE gau_io)
 add_test(NAME import_tests COMMAND import_tests)
+
+add_executable(interaction_tests tests/InteractionTests.cpp)
+target_include_directories(interaction_tests PRIVATE src)
+target_link_libraries(interaction_tests PRIVATE gau_interaction)
+add_test(NAME interaction_tests COMMAND interaction_tests)
 
 add_executable(canvas_tests
     tests/CanvasTests.cpp
