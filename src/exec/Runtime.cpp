@@ -189,6 +189,27 @@ void Runtime::EvalNode(NodeId nodeId)
     }
 }
 
+void Runtime::SetVariable(const std::string& name, Value value)
+{
+    for (auto& entry : variables) {
+        if (entry.first == name) {
+            entry.second = std::move(value);
+            return;
+        }
+    }
+    variables.emplace_back(name, std::move(value));
+}
+
+Value Runtime::GetVariable(const std::string& name) const
+{
+    for (const auto& entry : variables) {
+        if (entry.first == name) {
+            return entry.second;
+        }
+    }
+    return Value::None();
+}
+
 Value Runtime::EvalInputPin(PinId inputPinId)
 {
     const Pin* inputPin = graph->FindPin(inputPinId);
@@ -266,6 +287,7 @@ void Runtime::Start(NodeId entryNode)
     outputCache.clear();
     execOutputCache.clear();
     evalStack.clear();
+    variables.clear();
     pcNode = entryNode;
     chosenExec = INVALID_ID;
     ignoreBreakOnce = false;

@@ -56,6 +56,7 @@ add_library(gau_exec STATIC
     src/exec/FunctionNodes.cpp
     src/exec/FunctionOps.cpp
     src/exec/ConversionNodes.cpp
+    src/exec/VariableNodes.cpp
 )
 target_include_directories(gau_exec PUBLIC src)
 target_link_libraries(gau_exec PUBLIC gau_model gau_core)
@@ -222,6 +223,11 @@ add_executable(conversion_nodes_tests tests/ConversionNodesTests.cpp)
 target_include_directories(conversion_nodes_tests PRIVATE src)
 target_link_libraries(conversion_nodes_tests PRIVATE gau_exec)
 add_test(NAME conversion_nodes_tests COMMAND conversion_nodes_tests)
+
+add_executable(variable_nodes_tests tests/VariableNodesTests.cpp)
+target_include_directories(variable_nodes_tests PRIVATE src)
+target_link_libraries(variable_nodes_tests PRIVATE gau_exec)
+add_test(NAME variable_nodes_tests COMMAND variable_nodes_tests)
 
 add_executable(ui_tests tests/UiTests.cpp)
 target_include_directories(ui_tests PRIVATE src)

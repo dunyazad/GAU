@@ -91,6 +91,11 @@ public:
     void SetCallDepth(int depth) { callDepth = depth; }
     int CallDepth() const { return callDepth; }
 
+    // Graph-scoped local variables (SRS FR-REU-2). Set nodes write, Get
+    // nodes read; values persist across steps and clear on Start.
+    void SetVariable(const std::string& name, Value value);
+    Value GetVariable(const std::string& name) const;
+
 private:
     const NodeClass* ClassOf(const Node& node) const;
     bool IsExecPin(const Pin& pin) const;
@@ -115,6 +120,7 @@ private:
     std::vector<NodeId> evalStack;
     std::vector<Value> paramsIn;
     std::vector<Value> resultsOut;
+    std::vector<std::pair<std::string, Value>> variables;
 
     RunState state = RunState::Idle;
     NodeId pcNode = INVALID_ID;
