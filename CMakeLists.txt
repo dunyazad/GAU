@@ -26,6 +26,16 @@ if(MSVC)
     target_compile_definitions(wasm3 PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+# --- gau_core (v2 type/value system) ---
+add_library(gau_core STATIC
+    src/core/Value.cpp
+    src/core/TypeRegistry.cpp
+)
+target_include_directories(gau_core PUBLIC src)
+if(MSVC)
+    target_compile_definitions(gau_core PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- editor executable ---
 add_executable(gau
     src/main.cpp
@@ -92,6 +102,12 @@ add_custom_command(TARGET gau POST_BUILD
 
 # --- tests ---
 enable_testing()
+
+add_executable(core_tests tests/CoreTests.cpp)
+target_include_directories(core_tests PRIVATE src)
+target_link_libraries(core_tests PRIVATE gau_core)
+add_test(NAME core_tests COMMAND core_tests)
+
 add_executable(canvas_tests
     tests/CanvasTests.cpp
     src/render/Canvas.cpp
