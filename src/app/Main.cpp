@@ -26,6 +26,7 @@
 #include "model/Graph.h"
 #include "model/NodeClassV2.h"
 #include "model/Project.h"
+#include "model/UndoHistory.h"
 #include "render/GraphLayout.h"
 #include "render/GraphRenderer.h"
 #include "render/NanoVgPainter.h"
@@ -254,6 +255,7 @@ int main()
     InteractionFsm fsm;
     int funcCount = 0;
     std::function<void()> rebuildPalette;
+    UndoHistory history;
     const render::MeasureTextFn measure = [&painter](const std::string& s, float size) {
         return painter.MeasureText(s, size);
     };
@@ -282,6 +284,7 @@ int main()
         if (sel.size() < 2) {
             return;
         }
+        history.Record(graph);
         const render::GraphLayout layout = render::ComputeGraphLayout(graph, classes, measure);
         std::vector<NodeBox> boxes;
         for (NodeId id : sel) {
@@ -344,6 +347,7 @@ int main()
                 return;
             }
             const std::string name = "Func" + std::to_string(++funcCount);
+            history.Record(graph);
             const NodeId call =
                 CollapseSelection(graph, types, classes, builtins, functions, sel, name);
             if (call != INVALID_ID) {
@@ -355,7 +359,11 @@ int main()
         }));
         column->Add(std::make_unique<ui::Button>("Expand", [&]() {
             const std::vector<NodeId>& sel = fsm.Selection();
-            if (!sel.empty() && ExpandCall(graph, types, classes, functions, sel[0])) {
+            if (sel.empty()) {
+                return;
+            }
+            history.Record(graph);
+            if (ExpandCall(graph, types, classes, functions, sel[0])) {
                 fsm.ClearSelection();
             }
         }));
@@ -381,6 +389,16 @@ int main()
             cm.y = c.y;
             cm.text = "Comment";
             project.comments.push_back(cm);
+        }));
+        column->Add(std::make_unique<ui::Button>("Undo", [&]() {
+            if (history.Undo(graph)) {
+                fsm.ClearSelection();
+            }
+        }));
+        column->Add(std::make_unique<ui::Button>("Redo", [&]() {
+            if (history.Redo(graph)) {
+                fsm.ClearSelection();
+            }
         }));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
@@ -410,7 +428,8 @@ int main()
                 continue;
             }
             column->Add(std::make_unique<ui::Button>(
-                "+ " + name, [&graph, &classes, &canvas, &window, &spawnCount, name]() {
+                "+ " + name,
+                [&graph, &classes, &canvas, &window, &spawnCount, &history, name]() {
                     const NodeClass* cls = classes.Find(name);
                     if (cls == nullptr) {
                         return;
@@ -419,6 +438,7 @@ int main()
                         static_cast<float>(window.GetWidth()) * 0.5f,
                         static_cast<float>(window.GetHeight()) * 0.5f});
                     const float offset = static_cast<float>(spawnCount % 8) * 24.0f;
+                    history.Record(graph);
                     graph.AddNode(*cls, center.x + offset, center.y + offset);
                     ++spawnCount;
                 }));
@@ -459,6 +479,9 @@ int main()
         const NodeClass* cls = (node != nullptr) ? classes.Find(node->className) : nullptr;
         if (node != nullptr && cls != nullptr && !node->properties.empty()) {
             column->Add(std::make_unique<ui::Label>("Properties: " + node->className));
+            // One undo checkpoint per edit session on this panel: the first
+            // field change records; later keystrokes coalesce into it.
+            auto recorded = std::make_shared<bool>(false);
             for (std::size_t i = 0; i < node->properties.size() && i < cls->properties.size();
                  ++i) {
                 const TypeId pt = cls->properties[i].type;
@@ -466,9 +489,13 @@ int main()
                 row->Add(std::make_unique<ui::Label>(cls->properties[i].name));
                 row->Add(std::make_unique<ui::TextField>(
                     ValueToString(node->properties[i]),
-                    [&graph, &types, nodeId, i, pt](const std::string& v) {
+                    [&graph, &types, &history, recorded, nodeId, i, pt](const std::string& v) {
                         Node* n = graph.FindNode(nodeId);
                         if (n != nullptr && i < n->properties.size()) {
+                            if (!*recorded) {
+                                history.Record(graph);
+                                *recorded = true;
+                            }
                             n->properties[i] = ParseValue(types, pt, v);
                         }
                     }));
@@ -543,6 +570,7 @@ int main()
         fsm.ClearSelection();
         breakpoints.clear();
         shownNode = INVALID_ID;
+        history.Clear();
         if (rebuildPalette) {
             rebuildPalette();
         }
@@ -550,6 +578,7 @@ int main()
 
     std::vector<EditorInputEvent> events;
     bool panning = false;
+    bool dragRecorded = false;
     float lastX = 0.0f;
     float lastY = 0.0f;
 
@@ -607,8 +636,14 @@ int main()
                 }
             } else if (e.type == EditorInputType::MouseDown
                        && e.button == EditorMouseButton::Left) {
+                dragRecorded = false;
                 fsm.OnMouseDown(cp.x, cp.y, graph, layout);
             } else if (e.type == EditorInputType::MouseUp && e.button == EditorMouseButton::Left) {
+                // A link drag creates/replaces a link on release: checkpoint
+                // the graph just before it lands.
+                if (fsm.IsDraggingLink()) {
+                    history.Record(graph);
+                }
                 fsm.OnMouseUp(cp.x, cp.y, graph, layout);
             } else if (e.type == EditorInputType::MouseDown
                        && e.button == EditorMouseButton::Right) {
@@ -624,10 +659,28 @@ int main()
                     lastX = e.x;
                     lastY = e.y;
                 } else {
+                    // Checkpoint once, at the first actual node-drag move, so
+                    // the pre-drag positions are captured (a plain click that
+                    // never moves records nothing).
+                    if (fsm.GetState() == InteractionFsm::State::DraggingNodes
+                        && !dragRecorded) {
+                        history.Record(graph);
+                        dragRecorded = true;
+                    }
                     fsm.OnMouseMove(cp.x, cp.y, graph, layout);
                 }
             } else if (e.type == EditorInputType::MouseWheel) {
                 canvas.ZoomAt(render::Vec2{e.x, e.y}, std::pow(1.1f, e.wheelDelta));
+            } else if (e.type == EditorInputType::KeyDown && e.key == EditorKey::Undo) {
+                if (history.Undo(graph)) {
+                    fsm.ClearSelection();
+                    shownNode = INVALID_ID;
+                }
+            } else if (e.type == EditorInputType::KeyDown && e.key == EditorKey::Redo) {
+                if (history.Redo(graph)) {
+                    fsm.ClearSelection();
+                    shownNode = INVALID_ID;
+                }
             }
         }
 
