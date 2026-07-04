@@ -251,33 +251,32 @@ int main()
     // The function whose body is being edited (null when editing the main
     // graph); its interface can be grown with Add In / Add Out.
     FunctionDef* editingDef = nullptr;
-    // Scalar type chosen for new parameters/variables (cycled by a button).
-    TypeTag selType = TypeTag::Int;
-    const auto typeName = [](TypeTag t) {
-        switch (t) {
-        case TypeTag::Bool:
-            return "bool";
-        case TypeTag::Int:
-            return "int";
-        case TypeTag::Float:
-            return "float";
-        case TypeTag::String:
-            return "string";
-        default:
-            return "int";
+    // Type chosen for new parameters/variables. The Type button cycles
+    // through the builtin scalars plus every user-defined type currently
+    // registered (struct/enum/object), per SRS 2.1 / FR-TYP-1: user types
+    // must be selectable on pins and properties.
+    TypeId selTypeId = types.Builtin(TypeTag::Int);
+    const auto selectableTypes = [&]() -> std::vector<TypeId> {
+        std::vector<TypeId> list{types.Builtin(TypeTag::Bool), types.Builtin(TypeTag::Int),
+                                 types.Builtin(TypeTag::Float), types.Builtin(TypeTag::String),
+                                 types.Builtin(TypeTag::Object)};
+        for (const StructDef& s : types.Structs()) {
+            list.push_back(types.UserType(s.name));
         }
+        for (const EnumDef& e : types.Enums()) {
+            list.push_back(types.UserType(e.name));
+        }
+        return list;
     };
-    const auto cycleType = [](TypeTag t) {
-        switch (t) {
-        case TypeTag::Bool:
-            return TypeTag::Int;
-        case TypeTag::Int:
-            return TypeTag::Float;
-        case TypeTag::Float:
-            return TypeTag::String;
-        default:
-            return TypeTag::Bool;
+    const auto cycleSelType = [&]() {
+        const std::vector<TypeId> list = selectableTypes();
+        std::size_t idx = 0;
+        for (std::size_t i = 0; i < list.size(); ++i) {
+            if (list[i] == selTypeId) {
+                idx = i;
+            }
         }
+        selTypeId = list[(idx + 1) % list.size()];
     };
     BuiltinRegistry builtins;
     RegisterDemoClasses(classes, types);
@@ -474,14 +473,14 @@ int main()
             if (editingDef != nullptr) {
                 AddFunctionParam(*editingDef, false,
                                  "in" + std::to_string(editingDef->inputs.size() + 1),
-                                 types.Builtin(selType), classes, builtins, types, project);
+                                 selTypeId, classes, builtins, types, project);
             }
         }));
         column->Add(std::make_unique<ui::Button>("Add Out", [&]() {
             if (editingDef != nullptr) {
                 AddFunctionParam(*editingDef, true,
                                  "out" + std::to_string(editingDef->outputs.size() + 1),
-                                 types.Builtin(selType), classes, builtins, types, project);
+                                 selTypeId, classes, builtins, types, project);
             }
         }));
         column->Add(std::make_unique<ui::Button>("Del In", [&]() {
@@ -668,7 +667,7 @@ int main()
                     return;
                 }
             }
-            VariableDef def{name, types.Builtin(selType)};
+            VariableDef def{name, selTypeId};
             project.variables.push_back(def);
             RegisterVariableNodes(classes, builtins, types, def);
             if (rebuildPalette) {
@@ -683,7 +682,7 @@ int main()
         }));
         auto tlabel = std::make_unique<ui::Label>("int");
         typeLabel = tlabel.get();
-        row->Add(std::make_unique<ui::Button>("Type", [&]() { selType = cycleType(selType); }));
+        row->Add(std::make_unique<ui::Button>("Type", [&]() { cycleSelType(); }));
         row->Add(std::move(tlabel));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(row));
@@ -942,7 +941,7 @@ int main()
         }
 
         if (typeLabel != nullptr) {
-            typeLabel->SetText(typeName(selType));
+            typeLabel->SetText(types.TypeName(selTypeId));
         }
 
         if (infoLabel != nullptr) {
