@@ -144,6 +144,20 @@ add_custom_command(TARGET gau POST_BUILD
             $<TARGET_FILE_DIR:gau>
 )
 
+# --- gau2 (v2 app: assembles the new stack on the v1 platform) ---
+add_executable(gau2
+    src/app/Main.cpp
+    src/platform/GLLoader.cpp
+    src/platform/PlatformWindow.cpp
+    src/platform/PlatformNVG.cpp
+    src/platform/PlatformInput.cpp
+)
+target_include_directories(gau2 PRIVATE src external)
+target_link_libraries(gau2 PRIVATE SDL3::SDL3-static nanovg gau_render gau_exec)
+if(MSVC)
+    target_compile_definitions(gau2 PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- tests ---
 enable_testing()
 
