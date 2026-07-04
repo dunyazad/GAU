@@ -165,6 +165,28 @@ void TypeRegistry::DefineStruct(StructDef def)
     structs.push_back(std::move(def));
 }
 
+bool TypeRegistry::RemoveStruct(const std::string& name)
+{
+    for (std::size_t i = 0; i < structs.size(); ++i) {
+        if (structs[i].name == name) {
+            structs.erase(structs.begin() + static_cast<std::ptrdiff_t>(i));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TypeRegistry::RemoveEnum(const std::string& name)
+{
+    for (std::size_t i = 0; i < enums.size(); ++i) {
+        if (enums[i].name == name) {
+            enums.erase(enums.begin() + static_cast<std::ptrdiff_t>(i));
+            return true;
+        }
+    }
+    return false;
+}
+
 const EnumDef* TypeRegistry::FindEnum(const std::string& name) const
 {
     for (const EnumDef& def : enums) {

@@ -14,6 +14,7 @@
 #include "exec/FunctionNodes.h"
 #include "exec/FunctionOps.h"
 #include "exec/Runtime.h"
+#include "exec/StructEdit.h"
 #include "exec/StructNodes.h"
 #include "exec/VariableNodes.h"
 #include "interaction/Align.h"
@@ -803,6 +804,54 @@ int main()
             }
         }));
         column->Add(std::move(makeRow));
+
+        // Edit an existing user type (FR-TYP-4 + type deletion): the Name field
+        // targets an already-defined type. Add/Del Field grows or shrinks a
+        // struct and re-syncs its Make/Break instances across all graphs; Del
+        // Type drops the definition. Deleted struct Make/Break classes stay
+        // registered as orphans (same behavior as Del Var's Get/Set).
+        auto editRow = std::make_unique<ui::Row>(6.0f);
+        editRow->Add(std::make_unique<ui::Button>("Add Field", [&, typeNameField, memField]() {
+            if (typeNameField->Value().empty() || memField->Value().empty()) {
+                return;
+            }
+            if (types.FindStruct(typeNameField->Value()) == nullptr) {
+                return;
+            }
+            AddStructField(types, typeNameField->Value(), memField->Value(), selTypeId, classes,
+                           builtins, project);
+            memField->SetValue("");
+            if (rebuildPalette) {
+                rebuildPalette();
+            }
+        }));
+        editRow->Add(std::make_unique<ui::Button>("Del Field", [&, typeNameField]() {
+            const StructDef* s = types.FindStruct(typeNameField->Value());
+            if (s == nullptr || s->fields.empty()) {
+                return;
+            }
+            RemoveStructField(types, typeNameField->Value(),
+                              static_cast<int>(s->fields.size()) - 1, classes, builtins, project);
+            if (rebuildPalette) {
+                rebuildPalette();
+            }
+        }));
+        editRow->Add(std::make_unique<ui::Button>("Del Type", [&, typeNameField]() {
+            const std::string name = typeNameField->Value();
+            bool removed = types.RemoveStruct(name);
+            if (!removed) {
+                removed = types.RemoveEnum(name);
+            }
+            if (removed) {
+                // Fall back to a safe scalar in case the deleted type was the
+                // current selection.
+                selTypeId = types.Builtin(TypeTag::Int);
+                if (rebuildPalette) {
+                    rebuildPalette();
+                }
+            }
+        }));
+        column->Add(std::move(editRow));
 
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));

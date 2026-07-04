@@ -57,6 +57,7 @@ add_library(gau_exec STATIC
     src/exec/FunctionNodes.cpp
     src/exec/FunctionOps.cpp
     src/exec/FunctionInterface.cpp
+    src/exec/StructEdit.cpp
     src/exec/ConversionNodes.cpp
     src/exec/VariableNodes.cpp
 )
@@ -255,6 +256,11 @@ add_executable(function_interface_tests tests/FunctionInterfaceTests.cpp)
 target_include_directories(function_interface_tests PRIVATE src)
 target_link_libraries(function_interface_tests PRIVATE gau_exec)
 add_test(NAME function_interface_tests COMMAND function_interface_tests)
+
+add_executable(struct_edit_tests tests/StructEditTests.cpp)
+target_include_directories(struct_edit_tests PRIVATE src)
+target_link_libraries(struct_edit_tests PRIVATE gau_exec)
+add_test(NAME struct_edit_tests COMMAND struct_edit_tests)
 
 add_executable(conversion_nodes_tests tests/ConversionNodesTests.cpp)
 target_include_directories(conversion_nodes_tests PRIVATE src)

@@ -37,6 +37,12 @@ public:
 
     void DefineEnum(EnumDef def);
     void DefineStruct(StructDef def);
+    // Removes a user struct/enum definition by name (type editor deletion). The
+    // interned TypeId is intentionally left in place so pins on existing nodes
+    // stay resolvable; the type simply stops being offered or regenerated.
+    // Returns true when a definition was removed.
+    bool RemoveStruct(const std::string& name);
+    bool RemoveEnum(const std::string& name);
     const EnumDef* FindEnum(const std::string& name) const;
     const StructDef* FindStruct(const std::string& name) const;
     const std::vector<EnumDef>& Enums() const { return enums; }
