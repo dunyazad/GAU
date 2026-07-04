@@ -10,6 +10,7 @@
 #include "core/TypeRegistry.h"
 #include "exec/Builtins.h"
 #include "exec/ConversionNodes.h"
+#include "exec/FunctionInterface.h"
 #include "exec/FunctionNodes.h"
 #include "exec/FunctionOps.h"
 #include "exec/Runtime.h"
@@ -246,6 +247,9 @@ int main()
     // main graph. Panel callbacks capture `active` (not a fixed reference) so
     // switching context takes effect immediately.
     Graph* active = project.graph.get();
+    // The function whose body is being edited (null when editing the main
+    // graph); its interface can be grown with Add In / Add Out.
+    FunctionDef* editingDef = nullptr;
     BuiltinRegistry builtins;
     RegisterDemoClasses(classes, types);
     RegisterConversionNodes(classes, builtins, types);
@@ -417,15 +421,31 @@ int main()
                 return;
             }
             active = def->body.get();
+            editingDef = def;
             editContext = def->name;
             fsm.ClearSelection();
             history.Clear();
         }));
         column->Add(std::make_unique<ui::Button>("Main", [&]() {
             active = project.graph.get();
+            editingDef = nullptr;
             editContext = "main";
             fsm.ClearSelection();
             history.Clear();
+        }));
+        column->Add(std::make_unique<ui::Button>("Add In", [&]() {
+            if (editingDef != nullptr) {
+                AddFunctionParam(*editingDef, false,
+                                 "in" + std::to_string(editingDef->inputs.size() + 1),
+                                 types.Builtin(TypeTag::Int), classes, builtins, types, project);
+            }
+        }));
+        column->Add(std::make_unique<ui::Button>("Add Out", [&]() {
+            if (editingDef != nullptr) {
+                AddFunctionParam(*editingDef, true,
+                                 "out" + std::to_string(editingDef->outputs.size() + 1),
+                                 types.Builtin(TypeTag::Int), classes, builtins, types, project);
+            }
         }));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
@@ -627,6 +647,7 @@ int main()
         }
         rebindBehaviors();
         active = project.graph.get();
+        editingDef = nullptr;
         editContext = "main";
         entry = FindByClass(*project.graph, "EventBegin");
         fsm.ClearSelection();

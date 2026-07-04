@@ -30,6 +30,12 @@ public:
     const Node* FindNode(NodeId nodeId) const;
     const std::vector<Node>& Nodes() const { return nodes; }
 
+    // Appends a pin to an existing node with a fresh pin id, leaving other
+    // pins (and their links) untouched. Used when a function gains a
+    // parameter and existing instances must grow to match. Returns the new
+    // pin id, or INVALID_ID if the node does not exist.
+    PinId AppendPin(NodeId nodeId, PinDirection direction, TypeId type, const std::string& name);
+
     const Pin* FindPin(PinId pinId) const;
     const Node* FindPinOwner(PinId pinId) const;
 

@@ -36,6 +36,28 @@ NodeId Graph::AddNode(const NodeClass& nodeClass, float x, float y)
     return nodes.back().id;
 }
 
+PinId Graph::AppendPin(NodeId nodeId, PinDirection direction, TypeId type,
+                       const std::string& name)
+{
+    Node* node = FindNode(nodeId);
+    if (node == nullptr) {
+        return INVALID_ID;
+    }
+    Pin pin;
+    pin.id = nextPinId++;
+    pin.node = nodeId;
+    pin.direction = direction;
+    pin.type = type;
+    pin.name = name;
+    const PinId id = pin.id;
+    if (direction == PinDirection::Input) {
+        node->inputs.push_back(std::move(pin));
+    } else {
+        node->outputs.push_back(std::move(pin));
+    }
+    return id;
+}
+
 bool Graph::RemoveNode(NodeId nodeId)
 {
     for (std::size_t i = 0; i < nodes.size(); ++i) {
