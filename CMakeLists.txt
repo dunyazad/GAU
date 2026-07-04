@@ -36,6 +36,17 @@ if(MSVC)
     target_compile_definitions(gau_core PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+# --- gau_model (v2 graph/node model) ---
+add_library(gau_model STATIC
+    src/model/Graph.cpp
+    src/model/NodeClassV2.cpp
+)
+target_include_directories(gau_model PUBLIC src)
+target_link_libraries(gau_model PUBLIC gau_core)
+if(MSVC)
+    target_compile_definitions(gau_model PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- editor executable ---
 add_executable(gau
     src/main.cpp
@@ -107,6 +118,11 @@ add_executable(core_tests tests/CoreTests.cpp)
 target_include_directories(core_tests PRIVATE src)
 target_link_libraries(core_tests PRIVATE gau_core)
 add_test(NAME core_tests COMMAND core_tests)
+
+add_executable(model_tests tests/ModelTests.cpp)
+target_include_directories(model_tests PRIVATE src)
+target_link_libraries(model_tests PRIVATE gau_model)
+add_test(NAME model_tests COMMAND model_tests)
 
 add_executable(canvas_tests
     tests/CanvasTests.cpp
