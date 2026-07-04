@@ -105,10 +105,54 @@ static void TestSuggest()
     Check(SuggestConversion(TypeTag::Bool, TypeTag::Float).empty(), "no bool->float converter");
 }
 
+static void TestInsertConversion()
+{
+    TypeRegistry t;
+    NodeClassRegistry classes;
+    BuiltinRegistry builtins;
+    RegisterMakers(classes, builtins, t);
+    RegisterConversionNodes(classes, builtins, t);
+    // A sink node with a single float input.
+    NodeClass sink;
+    sink.name = "FSink";
+    sink.category = "Pure";
+    sink.pins.push_back(PinDef{PinDirection::Input, t.Builtin(TypeTag::Float), "In"});
+    classes.Register(sink);
+    NodeClass isink;
+    isink.name = "ISink";
+    isink.category = "Pure";
+    isink.pins.push_back(PinDef{PinDirection::Input, t.Builtin(TypeTag::Int), "In"});
+    classes.Register(isink);
+
+    Graph g(t);
+    const NodeId mi = g.AddNode(*classes.Find("MI"), 0, 0);   // int output
+    const NodeId fs = g.AddNode(*classes.Find("FSink"), 0, 0); // float input
+    g.FindNode(mi)->properties[0] = Value::Int(3);
+
+    const PinId outPin = g.FindNode(mi)->outputs[0].id;
+    const PinId inPin = g.FindNode(fs)->inputs[0].id;
+    const std::size_t before = g.Nodes().size();
+    Check(InsertConversion(g, t, classes, outPin, inPin), "int->float insert succeeds");
+    Check(g.Nodes().size() == before + 1, "a converter node was added");
+
+    Runtime rt(g, t, classes, builtins, nullptr);
+    rt.Start(INVALID_ID);
+    Check(rt.EvalPin(inPin) == Value::Float(3.0), "sink pulls 3 as float 3.0 through converter");
+
+    // Same-type pins: nothing to insert.
+    Graph g2(t);
+    const NodeId a = g2.AddNode(*classes.Find("MI"), 0, 0);
+    const NodeId b = g2.AddNode(*classes.Find("ISink"), 0, 0); // int input
+    Check(!InsertConversion(g2, t, classes, g2.FindNode(a)->outputs[0].id,
+                            g2.FindNode(b)->inputs[0].id),
+          "no converter for matching int->int");
+}
+
 int main()
 {
     TestConversions();
     TestSuggest();
+    TestInsertConversion();
     if (failCount == 0) {
         std::printf("conversion_nodes_tests: all passed\n");
     }

@@ -7,6 +7,8 @@
 
 #include "Runtime.h"
 
+#include "model/Graph.h"
+#include "model/Ids.h"
 #include "model/NodeClassV2.h"
 
 #include "core/Type.h"
@@ -23,5 +25,12 @@ void RegisterConversionNodes(NodeClassRegistry& classes, BuiltinRegistry& builti
 // Returns the class name of a converter from `from` to `to`, or an empty
 // string when no direct scalar conversion exists (or the tags are equal).
 std::string SuggestConversion(TypeTag from, TypeTag to);
+
+// When two pins can't connect directly but a scalar converter exists, spawns
+// that converter between them (output -> converter -> input) and returns
+// true. Returns false if the pins connect directly, are the same direction,
+// or have no matching converter. The converter classes must be registered.
+bool InsertConversion(Graph& graph, const TypeRegistry& types, const NodeClassRegistry& classes,
+                      PinId a, PinId b);
 
 } // namespace gau

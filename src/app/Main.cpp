@@ -640,9 +640,16 @@ int main()
                 fsm.OnMouseDown(cp.x, cp.y, graph, layout);
             } else if (e.type == EditorInputType::MouseUp && e.button == EditorMouseButton::Left) {
                 // A link drag creates/replaces a link on release: checkpoint
-                // the graph just before it lands.
+                // the graph just before it lands. If the pins can't connect
+                // directly but a scalar converter exists, drop one between
+                // them instead.
                 if (fsm.IsDraggingLink()) {
                     history.Record(graph);
+                    const PinId src = fsm.DragLinkPin();
+                    const PinId dst = HitTestPin(layout, cp.x, cp.y, 10.0f);
+                    if (dst != INVALID_ID && !graph.CanConnect(src, dst)) {
+                        InsertConversion(graph, types, classes, src, dst);
+                    }
                 }
                 fsm.OnMouseUp(cp.x, cp.y, graph, layout);
             } else if (e.type == EditorInputType::MouseDown

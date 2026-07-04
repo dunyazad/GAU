@@ -132,4 +132,51 @@ std::string SuggestConversion(TypeTag from, TypeTag to)
     return "";
 }
 
+bool InsertConversion(Graph& graph, const TypeRegistry& types, const NodeClassRegistry& classes,
+                      PinId a, PinId b)
+{
+    const Pin* pa = graph.FindPin(a);
+    const Pin* pb = graph.FindPin(b);
+    if (pa == nullptr || pb == nullptr || pa->direction == pb->direction) {
+        return false;
+    }
+    // Orient into (output -> input).
+    const Pin* outPin = (pa->direction == PinDirection::Output) ? pa : pb;
+    const Pin* inPin = (pa->direction == PinDirection::Output) ? pb : pa;
+    if (outPin->node == inPin->node || outPin->type == inPin->type) {
+        return false;
+    }
+
+    const TypeDesc* outDesc = types.Resolve(outPin->type);
+    const TypeDesc* inDesc = types.Resolve(inPin->type);
+    if (outDesc == nullptr || inDesc == nullptr) {
+        return false;
+    }
+    const std::string convName = SuggestConversion(outDesc->tag, inDesc->tag);
+    if (convName.empty()) {
+        return false;
+    }
+    const NodeClass* cls = classes.Find(convName);
+    if (cls == nullptr) {
+        return false;
+    }
+
+    const Node* outNode = graph.FindPinOwner(outPin->id);
+    const Node* inNode = graph.FindPinOwner(inPin->id);
+    const float x = (outNode != nullptr && inNode != nullptr) ? (outNode->x + inNode->x) * 0.5f
+                                                              : 0.0f;
+    const float y = (outNode != nullptr && inNode != nullptr) ? (outNode->y + inNode->y) * 0.5f
+                                                              : 0.0f;
+    const PinId sourcePin = outPin->id;
+    const PinId sinkPin = inPin->id;
+    const NodeId conv = graph.AddNode(*cls, x, y);
+    const Node* convNode = graph.FindNode(conv);
+    if (convNode == nullptr || convNode->inputs.empty() || convNode->outputs.empty()) {
+        return false;
+    }
+    graph.AddLink(sourcePin, convNode->inputs[0].id);
+    graph.AddLink(convNode->outputs[0].id, sinkPin);
+    return true;
+}
+
 } // namespace gau
