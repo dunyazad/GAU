@@ -9,3 +9,7 @@ ios/build/
 # Per-user editor state
 editor_settings.json
 .gau_session/
+
+# Bundled wasm toolchain (clang/wasm-ld) shipped with the app, not in git
+# (too large; staged by the packaging step). See docs/WASM_BUNDLING.md.
+/tools/

@@ -152,6 +152,26 @@ add_custom_command(TARGET gau POST_BUILD
             $<TARGET_FILE_DIR:gau>
 )
 
+# Stage the wasm sources (with the generated gau_api.h) next to the exe so
+# the in-app Function Editor can build against them from a distributed layout.
+add_custom_command(TARGET gau POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/wasm_src
+            $<TARGET_FILE_DIR:gau>/wasm_src
+)
+
+# Bundle the wasm toolchain (clang/wasm-ld) if a tools/ tree is present in the
+# source root. It is not tracked in git (see .gitignore); a packaging step
+# drops a wasm32-capable clang under tools/llvm/bin. FindClangForWasm looks
+# there first, so a shipped app builds wasm functions without a separate LLVM.
+if(EXISTS ${CMAKE_SOURCE_DIR}/tools)
+    add_custom_command(TARGET gau POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_SOURCE_DIR}/tools
+                $<TARGET_FILE_DIR:gau>/tools
+    )
+endif()
+
 # --- gau_interaction (v2 hit test + interaction FSM) ---
 add_library(gau_interaction STATIC
     src/interaction/HitTest2.cpp

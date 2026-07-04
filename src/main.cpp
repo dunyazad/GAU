@@ -804,6 +804,12 @@ static const char* EDITOR_SETTINGS_PATH = "editor_settings.json";
 static const char* WASM_MODULE_DIR = "wasm";
 static const char* WASM_SOURCE_DIR = "wasm_src";
 
+// Directory of the running executable (set from argv[0] in main). Lets the
+// app find the clang toolchain bundled beside it regardless of the working
+// directory, so a distributed build can compile wasm functions without a
+// separate LLVM install.
+static std::string g_appDir;
+
 static void LoadWasmModules()
 {
     std::vector<std::string> errors;
@@ -1031,12 +1037,18 @@ static std::string FindClangForWasm(const EditorSettings& settings)
         return settings.clangPath;
     }
     std::error_code ec;
-    const char* candidates[] = {
-        "tools/llvm/bin/clang.exe",
-        "tools/clang.exe",
-        "C:/Program Files/LLVM/bin/clang.exe",
-    };
-    for (const char* candidate : candidates) {
+    // Prefer the toolchain bundled next to the executable (self-contained
+    // distribution), then the same paths relative to the working directory,
+    // then a system LLVM install, then PATH.
+    std::vector<std::string> candidates;
+    if (!g_appDir.empty()) {
+        candidates.push_back(g_appDir + "/tools/llvm/bin/clang.exe");
+        candidates.push_back(g_appDir + "/tools/clang.exe");
+    }
+    candidates.push_back("tools/llvm/bin/clang.exe");
+    candidates.push_back("tools/clang.exe");
+    candidates.push_back("C:/Program Files/LLVM/bin/clang.exe");
+    for (const std::string& candidate : candidates) {
         if (std::filesystem::exists(candidate, ec)) {
             return candidate;
         }
@@ -1641,8 +1653,13 @@ static bool ProcessTabBarClick(const EditorInputEvent& event, float screenWidth,
 
 int main(int argc, char** argv)
 {
-    (void)argc;
-    (void)argv;
+    if (argc > 0 && argv[0] != nullptr) {
+        std::error_code ec;
+        const std::filesystem::path exePath = std::filesystem::absolute(argv[0], ec);
+        if (!ec) {
+            g_appDir = exePath.parent_path().string();
+        }
+    }
 
     MoveConsoleToLeftMonitorMaximized();
 
