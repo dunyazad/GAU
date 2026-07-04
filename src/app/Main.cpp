@@ -18,6 +18,8 @@
 #include "interaction/Align.h"
 #include "interaction/HitTest2.h"
 #include "interaction/InteractionFsm.h"
+#include "interaction/Minimap.h"
+#include "interaction/NodeSearch.h"
 #include "io/ProjectExport.h"
 #include "io/ProjectFile.h"
 #include "model/Function.h"
@@ -32,6 +34,7 @@
 
 #include <nanovg.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -151,6 +154,70 @@ static Value ParseValue(const TypeRegistry& types, TypeId id, const std::string&
     default:
         return types.MakeDefault(id);
     }
+}
+
+// Draws comment/group boxes behind the graph (FR-UX-4).
+static void DrawComments(NVGcontext* vg, const render::Canvas& canvas,
+                         const std::vector<Comment>& comments)
+{
+    for (const Comment& c : comments) {
+        const render::Vec2 tl = canvas.CanvasToScreen(render::Vec2{c.x, c.y});
+        const float w = c.w * canvas.Zoom();
+        const float h = c.h * canvas.Zoom();
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, tl.x, tl.y, w, h, 4.0f);
+        nvgFillColor(vg, nvgRGBA(90, 90, 130, 40));
+        nvgFill(vg);
+        nvgStrokeColor(vg, nvgRGBA(140, 140, 180, 180));
+        nvgStrokeWidth(vg, 1.5f);
+        nvgStroke(vg);
+        nvgFillColor(vg, nvgRGBA(210, 210, 230, 220));
+        nvgFontSize(vg, 14.0f);
+        nvgFontFace(vg, "sans");
+        nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        nvgText(vg, tl.x + 6.0f, tl.y + 4.0f, c.text.c_str(), nullptr);
+    }
+}
+
+// Draws a minimap of all nodes plus the current viewport (FR-UX-1).
+static void DrawMinimap(NVGcontext* vg, const render::Canvas& canvas,
+                        const render::GraphLayout& layout, float screenW, float screenH)
+{
+    std::vector<NodeBox> boxes;
+    for (const render::NodeLayout& nl : layout.Nodes()) {
+        boxes.push_back(NodeBox{nl.id, nl.x, nl.y, nl.w, nl.h});
+    }
+    Bounds content;
+    if (!ComputeBounds(boxes, content)) {
+        return;
+    }
+    const ViewRect panel{screenW * 0.5f - 120.0f, screenH - 150.0f, 240.0f, 130.0f};
+    const render::Vec2 tl = canvas.ScreenToCanvas(render::Vec2{0.0f, 0.0f});
+    const render::Vec2 br = canvas.ScreenToCanvas(render::Vec2{screenW, screenH});
+    const Bounds visible{tl.x, tl.y, br.x, br.y};
+    const MinimapFit fit = ComputeMinimap(content, panel, visible);
+
+    nvgBeginPath(vg);
+    nvgRect(vg, panel.x, panel.y, panel.w, panel.h);
+    nvgFillColor(vg, nvgRGBA(20, 20, 24, 220));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBA(70, 70, 78, 255));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    for (const NodeBox& b : boxes) {
+        nvgBeginPath(vg);
+        nvgRect(vg, fit.offsetX + b.x * fit.scale, fit.offsetY + b.y * fit.scale,
+                std::max(b.w * fit.scale, 1.5f), std::max(b.h * fit.scale, 1.5f));
+        nvgFillColor(vg, nvgRGBA(120, 140, 180, 255));
+        nvgFill(vg);
+    }
+
+    nvgBeginPath(vg);
+    nvgRect(vg, fit.viewport.x, fit.viewport.y, fit.viewport.w, fit.viewport.h);
+    nvgStrokeColor(vg, nvgRGBA(255, 180, 40, 255));
+    nvgStrokeWidth(vg, 1.5f);
+    nvgStroke(vg);
 }
 
 int main()
@@ -304,6 +371,17 @@ int main()
         column->Add(std::make_unique<ui::Button>("Load", [&window]() {
             ShowGraphFileDialog(window.GetSDLWindow(), FileDialogType::OpenGraph);
         }));
+        column->Add(std::make_unique<ui::Button>("Comment", [&]() {
+            const render::Vec2 c = canvas.ScreenToCanvas(
+                render::Vec2{static_cast<float>(window.GetWidth()) * 0.5f,
+                             static_cast<float>(window.GetHeight()) * 0.5f});
+            Comment cm;
+            cm.id = project.comments.empty() ? 1 : project.comments.back().id + 1;
+            cm.x = c.x;
+            cm.y = c.y;
+            cm.text = "Comment";
+            project.comments.push_back(cm);
+        }));
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{200.0f, 200.0f});
@@ -408,6 +486,41 @@ int main()
     const std::size_t propertyIndex = panels.size();
     panels.push_back(buildProperties(INVALID_ID));
     NodeId shownNode = INVALID_ID;
+
+    // Search panel (top-center): typing centers the view on matching nodes.
+    {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
+        auto row = std::make_unique<ui::Row>(6.0f);
+        row->Add(std::make_unique<ui::Label>("Find"));
+        row->Add(std::make_unique<ui::TextField>("", [&](const std::string& query) {
+            const std::vector<NodeId> matches = SearchNodes(graph, query);
+            if (matches.empty()) {
+                return;
+            }
+            const render::GraphLayout layout =
+                render::ComputeGraphLayout(graph, classes, measure);
+            std::vector<NodeBox> boxes;
+            for (NodeId id : matches) {
+                const render::NodeLayout* nl = layout.FindNode(id);
+                if (nl != nullptr) {
+                    boxes.push_back(NodeBox{id, nl->x, nl->y, nl->w, nl->h});
+                }
+            }
+            Bounds b;
+            if (!ComputeBounds(boxes, b)) {
+                return;
+            }
+            const render::Vec2 worldCenter{(b.minX + b.maxX) * 0.5f, (b.minY + b.maxY) * 0.5f};
+            const render::Vec2 screenNow = canvas.CanvasToScreen(worldCenter);
+            canvas.PanByScreenDelta(static_cast<float>(window.GetWidth()) * 0.5f - screenNow.x,
+                                    static_cast<float>(window.GetHeight()) * 0.5f - screenNow.y);
+        }, 160.0f));
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(row));
+        const ui::Size s = raw->Measure(painter, ui::Size{240.0f, 40.0f});
+        raw->Arrange(ui::Rect{initW * 0.5f - s.w * 0.5f, 8.0f, s.w + 8.0f, s.h + 8.0f});
+        panels.push_back(std::move(panel));
+    }
 
     // Save/load the whole project. Load resets the registries in place (so
     // references stay valid), re-imports, then rebinds behaviors and rebuilds
@@ -549,6 +662,7 @@ int main()
 
         window.BeginFrame(0.12f, 0.12f, 0.13f);
         nvgBeginFrame(vg, screenW, screenH, window.GetPixelRatio());
+        DrawComments(vg, canvas, project.comments);
         render::DrawGraph(vg, canvas, graph, types, layout);
         render::DrawSelection(vg, canvas, layout, fsm.Selection());
         if (fsm.IsDraggingLink()) {
@@ -560,6 +674,7 @@ int main()
         if (debug && debug->State() == RunState::Paused) {
             render::DrawNodeOutline(vg, canvas, layout, debug->CurrentNode(), 60, 220, 90, 3.0f);
         }
+        DrawMinimap(vg, canvas, layout, screenW, screenH);
         for (const std::unique_ptr<ui::Widget>& p : panels) {
             p->Paint(painter);
         }
