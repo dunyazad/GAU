@@ -82,9 +82,65 @@ static void TestLayoutAndEvents()
     Check(rec.texts >= 2, "2 button labels drawn");
 }
 
+static void TestTextField()
+{
+    std::string committed;
+    auto field = std::make_unique<TextField>(
+        "ab", [&committed](const std::string& v) { committed = v; }, 80.0f);
+    Widget* raw = field.get();
+    RecordingPainter painter;
+    raw->Measure(painter, Size{200.0f, 200.0f});
+    raw->Arrange(Rect{0.0f, 0.0f, 100.0f, 24.0f});
+
+    // Typing before focus is ignored.
+    Event text;
+    text.type = EventType::Text;
+    text.text[0] = 'c';
+    Check(!raw->OnEvent(text), "unfocused field ignores text");
+
+    // Click to focus.
+    Event down;
+    down.type = EventType::MouseDown;
+    down.x = 10.0f;
+    down.y = 10.0f;
+    Check(raw->OnEvent(down), "click focuses the field");
+    Check(static_cast<TextField*>(raw)->Focused(), "field is focused");
+
+    // Now typing appends and fires onChange.
+    Check(raw->OnEvent(text), "focused field consumes text");
+    Check(static_cast<TextField*>(raw)->Value() == "abc", "text appended");
+    Check(committed == "abc", "onChange fired with new value");
+
+    // Backspace deletes the last character.
+    Event back;
+    back.type = EventType::Key;
+    back.key = keys::Backspace;
+    raw->OnEvent(back);
+    Check(static_cast<TextField*>(raw)->Value() == "ab", "backspace removed a char");
+
+    // Enter blurs.
+    Event enter;
+    enter.type = EventType::Key;
+    enter.key = keys::Enter;
+    raw->OnEvent(enter);
+    Check(!static_cast<TextField*>(raw)->Focused(), "enter blurs the field");
+
+    // Clicking outside blurs.
+    Event down2 = down;
+    static_cast<TextField*>(raw)->OnEvent(down); // refocus
+    Event outside;
+    outside.type = EventType::MouseDown;
+    outside.x = 500.0f;
+    outside.y = 500.0f;
+    Check(!raw->OnEvent(outside), "click outside does not consume");
+    Check(!static_cast<TextField*>(raw)->Focused(), "click outside blurs");
+    (void)down2;
+}
+
 int main()
 {
     TestLayoutAndEvents();
+    TestTextField();
     if (failCount == 0) {
         std::printf("ui_tests: all passed\n");
     }

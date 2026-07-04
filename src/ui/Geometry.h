@@ -44,6 +44,15 @@ enum class EventType
     Text,
 };
 
+// Backend-agnostic key codes carried in Event::key for Key events. The app
+// maps its platform keys onto these; widgets compare against them.
+namespace keys {
+constexpr int None = 0;
+constexpr int Backspace = 1;
+constexpr int Enter = 2;
+constexpr int Escape = 3;
+} // namespace keys
+
 struct Event
 {
     EventType type = EventType::MouseMove;

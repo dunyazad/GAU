@@ -105,4 +105,34 @@ private:
     bool hovered = false;
 };
 
+// Single-line editable text field. Clicking focuses it; typed Text events
+// append at the end; Backspace deletes the last character; Enter/Escape blur.
+// onChange fires after every edit with the new value.
+class TextField : public Widget
+{
+public:
+    TextField(std::string value, std::function<void(const std::string&)> onChange,
+              float minWidth = 80.0f, float fontSize = 14.0f)
+        : value(std::move(value))
+        , onChange(std::move(onChange))
+        , minWidth(minWidth)
+        , fontSize(fontSize)
+    {
+    }
+    Size Measure(Painter& painter, Size available) override;
+    void Paint(Painter& painter) override;
+    bool OnEvent(const Event& event) override;
+
+    const std::string& Value() const { return value; }
+    void SetValue(std::string v) { value = std::move(v); }
+    bool Focused() const { return focused; }
+
+private:
+    std::string value;
+    std::function<void(const std::string&)> onChange;
+    float minWidth;
+    float fontSize;
+    bool focused = false;
+};
+
 } // namespace gau::ui

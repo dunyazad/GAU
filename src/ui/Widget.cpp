@@ -163,4 +163,65 @@ bool Button::OnEvent(const Event& event)
     return false;
 }
 
+static const float FIELD_PAD_X = 6.0f;
+static const float FIELD_PAD_Y = 5.0f;
+
+Size TextField::Measure(Painter& painter, Size available)
+{
+    (void)available;
+    const float textW = painter.MeasureText(value, fontSize) + FIELD_PAD_X * 2.0f;
+    measured = Size{std::max(minWidth, textW), fontSize + FIELD_PAD_Y * 2.0f};
+    return measured;
+}
+
+void TextField::Paint(Painter& painter)
+{
+    const Color bg = focused ? Color{40, 40, 48, 255} : Color{30, 30, 36, 255};
+    painter.FillRect(bounds, bg);
+    painter.StrokeRect(bounds, focused ? Color{255, 180, 40, 255} : Color{70, 70, 78, 255},
+                       focused ? 2.0f : 1.0f);
+    const std::string shown = focused ? value + "|" : value;
+    painter.Text(bounds.x + FIELD_PAD_X, bounds.y + bounds.h * 0.5f, shown,
+                 Color{230, 230, 235, 255}, fontSize);
+}
+
+bool TextField::OnEvent(const Event& event)
+{
+    if (event.type == EventType::MouseDown) {
+        focused = bounds.Contains(event.x, event.y);
+        return focused;
+    }
+    if (!focused) {
+        return false;
+    }
+    if (event.type == EventType::Text) {
+        value += event.text; // event.text is null-terminated UTF-8
+        if (onChange) {
+            onChange(value);
+        }
+        return true;
+    }
+    if (event.type == EventType::Key) {
+        if (event.key == keys::Backspace) {
+            // Remove one UTF-8 code point from the end.
+            while (!value.empty()) {
+                const unsigned char c = static_cast<unsigned char>(value.back());
+                value.pop_back();
+                if ((c & 0xC0) != 0x80) {
+                    break;
+                }
+            }
+            if (onChange) {
+                onChange(value);
+            }
+            return true;
+        }
+        if (event.key == keys::Enter || event.key == keys::Escape) {
+            focused = false;
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace gau::ui
