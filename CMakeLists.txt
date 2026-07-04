@@ -237,6 +237,11 @@ target_include_directories(project_io_tests PRIVATE src external)
 target_link_libraries(project_io_tests PRIVATE gau_io)
 add_test(NAME project_io_tests COMMAND project_io_tests)
 
+add_executable(function_serialize_tests tests/FunctionSerializeTests.cpp)
+target_include_directories(function_serialize_tests PRIVATE src external)
+target_link_libraries(function_serialize_tests PRIVATE gau_exec gau_io)
+add_test(NAME function_serialize_tests COMMAND function_serialize_tests)
+
 add_executable(interaction_tests tests/InteractionTests.cpp)
 target_include_directories(interaction_tests PRIVATE src)
 target_link_libraries(interaction_tests PRIVATE gau_interaction)

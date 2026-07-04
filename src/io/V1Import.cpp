@@ -331,4 +331,66 @@ bool ImportV1Graph(const std::string& jsonText, Graph& graph, const NodeClassReg
     return true;
 }
 
+static void ImportFunctionParams(const json& array, std::vector<FunctionParam>& out,
+                                 TypeRegistry& types)
+{
+    if (!array.is_array()) {
+        return;
+    }
+    for (const json& p : array) {
+        if (!p.is_object() || !p.contains("name") || !p.contains("type")) {
+            continue;
+        }
+        FunctionParam param;
+        param.name = p["name"].get<std::string>();
+        param.type = ResolveType(types, p["type"].get<std::string>());
+        out.push_back(std::move(param));
+    }
+}
+
+void ImportFunctions(const std::string& jsonText, FunctionRegistry& functions,
+                     NodeClassRegistry& classes, TypeRegistry& types,
+                     std::vector<std::string>& errors)
+{
+    const json root = json::parse(jsonText, nullptr, false);
+    if (root.is_discarded() || !root.is_object()) {
+        errors.push_back("invalid JSON");
+        return;
+    }
+    if (!root.contains("functions") || !root["functions"].is_array()) {
+        return;
+    }
+    for (const json& f : root["functions"]) {
+        if (!f.is_object() || !f.contains("name") || !f["name"].is_string()) {
+            continue;
+        }
+        const std::string name = f["name"].get<std::string>();
+        FunctionDef* def = functions.Create(types, name);
+        if (def == nullptr) {
+            errors.push_back("duplicate function: " + name);
+            continue;
+        }
+        def->hasExec = f.contains("hasExec") && f["hasExec"].is_boolean()
+                           ? f["hasExec"].get<bool>()
+                           : false;
+        if (f.contains("inputs")) {
+            ImportFunctionParams(f["inputs"], def->inputs, types);
+        }
+        if (f.contains("outputs")) {
+            ImportFunctionParams(f["outputs"], def->outputs, types);
+        }
+        if (f.contains("body") && f["body"].is_object()) {
+            ImportV1Graph(f["body"].dump(), *def->body, classes, types, errors);
+        }
+        // Locate the marshalling nodes by their generated class names.
+        for (const Node& n : def->body->Nodes()) {
+            if (n.className == name + " In") {
+                def->entryNode = n.id;
+            } else if (n.className == name + " Out") {
+                def->returnNode = n.id;
+            }
+        }
+    }
+}
+
 } // namespace gau

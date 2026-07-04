@@ -5,6 +5,7 @@
 // files. Errors are appended rather than thrown (no exceptions policy).
 
 #include "core/TypeRegistry.h"
+#include "model/Function.h"
 #include "model/Graph.h"
 #include "model/NodeClassV2.h"
 
@@ -28,5 +29,13 @@ ImportCounts ImportV1Definitions(const std::string& jsonText, TypeRegistry& type
 // the given registries. Returns false on a fatal parse error.
 bool ImportV1Graph(const std::string& jsonText, Graph& graph, const NodeClassRegistry& classes,
                    TypeRegistry& types, std::vector<std::string>& errors);
+
+// Loads a "functions" array (interface + body graph) into the registry.
+// Requires the node classes (including each function's generated
+// Entry/Return/Call classes) to already be loaded, since bodies instantiate
+// them. Runtime behaviors are bound separately via RegisterFunctionNodes.
+void ImportFunctions(const std::string& jsonText, FunctionRegistry& functions,
+                     NodeClassRegistry& classes, TypeRegistry& types,
+                     std::vector<std::string>& errors);
 
 } // namespace gau

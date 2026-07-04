@@ -175,12 +175,9 @@ static int PinIndex(const std::vector<Pin>& pins, PinId id)
     return -1;
 }
 
-static json ExportGraph(const Project& project)
+static json ExportGraphJson(const Graph& graph, const TypeRegistry& types,
+                            const NodeClassRegistry& classes)
 {
-    const TypeRegistry& types = project.types;
-    const NodeClassRegistry& classes = project.classes;
-    const Graph& graph = *project.graph;
-
     json nodes = json::array();
     for (const Node& node : graph.Nodes()) {
         json entry;
@@ -221,12 +218,43 @@ static json ExportGraph(const Project& project)
     return root;
 }
 
+static json ExportFunctions(const Project& project)
+{
+    json array = json::array();
+    for (const auto& defPtr : project.functions.All()) {
+        const FunctionDef& def = *defPtr;
+        json entry;
+        entry["name"] = def.name;
+        entry["hasExec"] = def.hasExec;
+        json inputs = json::array();
+        for (const FunctionParam& p : def.inputs) {
+            json param;
+            param["name"] = p.name;
+            param["type"] = project.types.TypeName(p.type);
+            inputs.push_back(param);
+        }
+        entry["inputs"] = inputs;
+        json outputs = json::array();
+        for (const FunctionParam& p : def.outputs) {
+            json param;
+            param["name"] = p.name;
+            param["type"] = project.types.TypeName(p.type);
+            outputs.push_back(param);
+        }
+        entry["outputs"] = outputs;
+        entry["body"] = ExportGraphJson(*def.body, project.types, project.classes);
+        array.push_back(entry);
+    }
+    return array;
+}
+
 std::string ExportProject(const Project& project)
 {
     json root;
     root["types"] = ExportTypes(project.types);
     root["nodeClasses"] = ExportClasses(project.types, project.classes);
-    const json graphJson = ExportGraph(project);
+    root["functions"] = ExportFunctions(project);
+    const json graphJson = ExportGraphJson(*project.graph, project.types, project.classes);
     root["nodes"] = graphJson["nodes"];
     root["links"] = graphJson["links"];
     return root.dump(2);
