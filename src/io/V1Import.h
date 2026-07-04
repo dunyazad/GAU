@@ -1,0 +1,32 @@
+#pragma once
+
+// Migrates v1 JSON (custom_nodes.json definitions and saved graphs) into
+// the v2 core/model. Functions take JSON text so they are testable without
+// files. Errors are appended rather than thrown (no exceptions policy).
+
+#include "core/TypeRegistry.h"
+#include "model/Graph.h"
+#include "model/NodeClassV2.h"
+
+#include <string>
+#include <vector>
+
+namespace gau {
+
+struct ImportCounts
+{
+    int types = 0;
+    int classes = 0;
+};
+
+// Loads v1 "types" and "nodeClasses" into the registries. Types load
+// first so class pins/properties can reference them.
+ImportCounts ImportV1Definitions(const std::string& jsonText, TypeRegistry& types,
+                                 NodeClassRegistry& classes, std::vector<std::string>& errors);
+
+// Loads a v1 graph document (nodes + links) into an empty Graph built on
+// the given registries. Returns false on a fatal parse error.
+bool ImportV1Graph(const std::string& jsonText, Graph& graph, const NodeClassRegistry& classes,
+                   TypeRegistry& types, std::vector<std::string>& errors);
+
+} // namespace gau

@@ -144,6 +144,16 @@ add_custom_command(TARGET gau POST_BUILD
             $<TARGET_FILE_DIR:gau>
 )
 
+# --- gau_io (v2 serialization / v1 import) ---
+add_library(gau_io STATIC
+    src/io/V1Import.cpp
+)
+target_include_directories(gau_io PUBLIC src external)
+target_link_libraries(gau_io PUBLIC gau_model gau_core)
+if(MSVC)
+    target_compile_definitions(gau_io PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- gau2 (v2 app: assembles the new stack on the v1 platform) ---
 add_executable(gau2
     src/app/Main.cpp
@@ -185,6 +195,11 @@ add_executable(render_tests tests/RenderTests.cpp)
 target_include_directories(render_tests PRIVATE src)
 target_link_libraries(render_tests PRIVATE gau_render)
 add_test(NAME render_tests COMMAND render_tests)
+
+add_executable(import_tests tests/ImportTests.cpp)
+target_include_directories(import_tests PRIVATE src external)
+target_link_libraries(import_tests PRIVATE gau_io)
+add_test(NAME import_tests COMMAND import_tests)
 
 add_executable(canvas_tests
     tests/CanvasTests.cpp
