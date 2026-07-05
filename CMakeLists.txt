@@ -60,9 +60,10 @@ add_library(gau_exec STATIC
     src/exec/StructEdit.cpp
     src/exec/ConversionNodes.cpp
     src/exec/VariableNodes.cpp
+    src/exec/WasmHost.cpp
 )
 target_include_directories(gau_exec PUBLIC src)
-target_link_libraries(gau_exec PUBLIC gau_model gau_core)
+target_link_libraries(gau_exec PUBLIC gau_model gau_core wasm3)
 if(MSVC)
     target_compile_definitions(gau_exec PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -261,6 +262,11 @@ add_executable(struct_edit_tests tests/StructEditTests.cpp)
 target_include_directories(struct_edit_tests PRIVATE src)
 target_link_libraries(struct_edit_tests PRIVATE gau_exec)
 add_test(NAME struct_edit_tests COMMAND struct_edit_tests)
+
+add_executable(wasm_host_tests tests/WasmHostTests.cpp)
+target_include_directories(wasm_host_tests PRIVATE src)
+target_link_libraries(wasm_host_tests PRIVATE gau_exec)
+add_test(NAME wasm_host_tests COMMAND wasm_host_tests)
 
 add_executable(conversion_nodes_tests tests/ConversionNodesTests.cpp)
 target_include_directories(conversion_nodes_tests PRIVATE src)

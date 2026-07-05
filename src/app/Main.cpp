@@ -17,6 +17,7 @@
 #include "exec/StructEdit.h"
 #include "exec/StructNodes.h"
 #include "exec/VariableNodes.h"
+#include "exec/WasmHost.h"
 #include "interaction/Align.h"
 #include "interaction/HitTest2.h"
 #include "interaction/InteractionFsm.h"
@@ -285,6 +286,20 @@ int main()
     RegisterDemoClasses(classes, types);
     RegisterConversionNodes(classes, builtins, types);
     RegisterDemoBuiltins(builtins);
+    // Load custom wasm node modules from the app-relative wasm/ directory so
+    // any node class bound to "wasm:<export>" runs through the v2 runtime
+    // (FR-WASM-1..3). Modules are keyed by export name, independent of the
+    // behavior registry, so no rebind is needed on project load.
+    {
+        std::vector<std::string> wasmErrors;
+        const int wasmLoaded = WasmHost::Instance().LoadModulesFromDirectory("wasm", wasmErrors);
+        for (const std::string& e : wasmErrors) {
+            std::printf("wasm: %s\n", e.c_str());
+        }
+        if (wasmLoaded > 0) {
+            std::printf("wasm: loaded %d module(s)\n", wasmLoaded);
+        }
+    }
     NodeId entry = BuildDemoGraph(*project.graph, classes);
     std::string editContext = "main";
 

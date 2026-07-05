@@ -7,7 +7,7 @@
 ```
 cmake -S . -B build
 cmake --build build --config Debug
-ctest --test-dir build -C Debug        # 23개 스위트, 전부 통과
+ctest --test-dir build -C Debug        # 25개 스위트, 전부 통과
 build/Debug/gau.exe                     # v1 앱
 build/Debug/gau2.exe                    # v2 앱
 ```
@@ -72,9 +72,14 @@ build/Debug/gau2.exe                    # v2 앱
 - **FR-UX-2 검색/포커스** — NodeSearch(부분일치 + 포커스 바운드). `node_search_tests`.
 - **FR-UX-1 미니맵 + FR-UX-4 코멘트** — Minimap(fit 변환 + NodesInRect 그룹핑),
   Comment 모델 + 직렬화. `minimap_tests`.
+- **FR-WASM-1~3 커스텀/Wasm 노드 런타임 통합** — WasmHost(wasm3 호스팅, gau_* host ABI 를
+  core Value 로 포팅, v1 WasmRuntime 과 동일 ABI 라 기존 .wasm 그대로 실행). v2 Runtime
+  EvaluateNode 가 execFn="wasm:<export>" 클래스를 NodeEval 브리지로 wasm3 에 dispatch. gau2
+  시작 시 wasm/ 디렉터리 모듈 로드. gau_exec 가 wasm3 링크(v1 model/Value 미유입, v2 계층
+  분리 유지). hand-assembled adder.wasm(clang 불필요)으로 4+6=10 검증. `wasm_host_tests`.
 
-전체 21개 스위트 통과. 위 기능 로직은 라이브러리 + 테스트로 완성. gau2 UI 배선 현황은
-아래 참조.
+ctest 전체 25개 스위트 통과(v1 포함). 위 기능 로직은 라이브러리 + 테스트로 완성. gau2 UI
+배선 현황은 아래 참조.
 
 ## gau2 UI 배선
 
@@ -123,9 +128,6 @@ build/Debug/gau2.exe                    # v2 앱
 
 ## 환경 제약으로 보류 (Windows 개발 환경서 검증 불가)
 
-- **FR-WASM-1~3 커스텀/Wasm 노드** — v1 의 WasmRuntime(wasm3)/ExecEngine 은 존재하나
-  v2 Runtime 에 미통합. 함수 런타임 빌드에 LLVM(clang wasm32) 필요(FR-WASM-4 번들 배선은
-  완료, clang 바이너리 투입만 남음). v2 통합은 배선 가능하나 실행 검증 불가.
 - **FR-PLT-1~2 Apple/터치** (M12) — PlatformNVG 에 Metal(__APPLE__) 분기는 있으나
   .mm/ios 프로젝트 없음. macOS/Xcode/Metal 필요, Windows 서 빌드/실행 불가.
 
@@ -134,13 +136,14 @@ build/Debug/gau2.exe                    # v2 앱
 desktop 기능 + UI + 폴리시(함수 본문/인터페이스 편집, 파라미터/변수/코멘트 CRUD, 타입 선택,
 그래프별 언두)까지 전부 완료. 남은 것은 환경 제약 항목 + 사소한 것뿐.
 
-1. **FR-WASM-1~3 (환경 필요)** — v1 WasmRuntime(wasm3)/ExecEngine 을 v2 Runtime 에 통합.
-   커스텀 노드 클래스 execFn -> wasm3 호출 바인딩. **LLVM(clang wasm32) 로 .wasm 빌드해야
-   실행 검증 가능** -- 없이 배선만 하면 미검증 코드라 보류 중. 툴체인 갖춰지면 착수.
-2. **FR-PLT-1~2 Apple/터치 (환경 필요)** — PlatformNVG Metal(.mm) 경로, macOS 빌드,
+1. **FR-PLT-1~2 Apple/터치 (환경 필요)** — PlatformNVG Metal(.mm) 경로, macOS 빌드,
    iOS Xcode 프로젝트, 터치 입력. **macOS/Xcode 필요, Windows 불가.**
-3. (완료) 코멘트 인라인 편집, FR-TYP-4 타입 편집(필드 추가/삭제 재동기화), 사용자 타입 삭제.
-   desktop 잔여 사소 항목 없음. 남은 것은 위 1·2번 환경 제약 항목뿐.
+2. (사소) v2 커스텀 wasm 노드 클래스 저작 UI. FR-WASM 런타임 통합은 완료(아래)지만, gau2 에
+   execFn="wasm:*" 클래스를 만드는 UI 는 아직 없음(v1 ClassEditorDialog 상당물 필요). 현재는
+   프로젝트 JSON 에 그런 클래스가 정의돼 있어야 wasm 노드가 실행됨. clang wasm32 갖춰지면
+   소스->.wasm 빌드 UI(v1 FunctionEditorDialog 상당물)도 포팅 가능.
+
+이제 desktop 잔여 사소 항목 없음. 남은 큰 항목은 위 1번(Apple/터치, 환경 제약)뿐.
 
 언두 관련 알려진 한계: UndoHistory 는 그래프 스냅샷만 -> collapse/expand 언두 시 그래프는
 복원되나 생성된 함수 클래스/def 는 레지스트리에 잔류(미사용 orphan). 코멘트/변수 정의는

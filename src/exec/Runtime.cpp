@@ -2,11 +2,32 @@
 
 #include "Runtime.h"
 
+#include "WasmHost.h"
+
 #include "core/TypeRegistry.h"
 
+#include <string>
 #include <utility>
 
 namespace gau {
+
+// Bridges a NodeEval to the wasm host so gau_* imports read this node's inputs/
+// properties and write its outputs. Indices match pin order.
+namespace {
+class NodeEvalWasmContext : public WasmNodeContext
+{
+public:
+    explicit NodeEvalWasmContext(NodeEval& eval) : eval(eval) {}
+    Value Input(int index) override { return eval.In(index); }
+    Value Property(int index) override { return eval.Prop(index); }
+    void SetOutput(int index, Value value) override { eval.Out(index, std::move(value)); }
+    void RunExec(int index) override { eval.Then(index); }
+    void Log(const std::string& message) override { eval.rt->Log(message); }
+
+private:
+    NodeEval& eval;
+};
+} // namespace
 
 void BuiltinRegistry::Register(std::string name, NodeFn fn)
 {
@@ -251,12 +272,27 @@ void Runtime::EvaluateNode(const Node& node)
         }
     }
     evalStack.push_back(node.id);
-    const NodeFn* fn = builtins->Find(node.className);
-    if (fn != nullptr) {
+    // A class bound to "wasm:<export>" dispatches into the wasm host; anything
+    // else runs its native builtin. The wasm export talks to this node through
+    // the NodeEval bridge.
+    const NodeClass* cls = ClassOf(node);
+    if (cls != nullptr && cls->execFn.rfind("wasm:", 0) == 0) {
         NodeEval eval;
         eval.rt = this;
         eval.node = &node;
-        (*fn)(eval);
+        NodeEvalWasmContext context(eval);
+        std::string error;
+        if (!WasmHost::Instance().CallNodeFunction(cls->execFn.substr(5), context, error)) {
+            Log("wasm error: " + error);
+        }
+    } else {
+        const NodeFn* fn = builtins->Find(node.className);
+        if (fn != nullptr) {
+            NodeEval eval;
+            eval.rt = this;
+            eval.node = &node;
+            (*fn)(eval);
+        }
     }
     evalStack.pop_back();
 }
