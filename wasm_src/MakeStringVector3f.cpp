@@ -1,15 +1,65 @@
 // GAU wasm node function (C++, no exceptions/RTTI, no stdlib).
-// The directives below define the node class (created/updated on
-// build). Pin tokens are name:type; use _ for unnamed exec pins.
-// @node category=Function
-// @in a:int b:int
-// @out result:int
-
-// gau_api.h is generated from the node classes: host imports plus
-// structs and gau_read_/gau_write_ helpers for data classes.
+// Formats a single Vector3f input pin into "{x, y, z}" on a string output
+// pin. The node class (in arg0:Vector3f, out:string) is defined in
+// custom_nodes.json / the project, not by directives: object-typed pins
+// cannot be declared with @in/@out (builtin scalars only). The single
+// struct pin is flattened to consecutive scalar leaf indices by the v2
+// runtime (FlatWasmContext), which is what gau_read_Vector3f(0) reads.
 #include "gau_api.h"
 
-extern "C" String MakeStringVector3f(const String& in)
+// Writes a non-negative integer as decimal digits. Returns the char count.
+static int WriteInt(char* out, long value)
 {
-    return String(ftoa(in.x) + ", " + ftoa(in.y) + ", " + ftoa(in.z));
+    if (value == 0) {
+        out[0] = '0';
+        return 1;
+    }
+    char tmp[20];
+    int t = 0;
+    while (value > 0) {
+        tmp[t++] = static_cast<char>('0' + (value % 10));
+        value /= 10;
+    }
+    for (int i = 0; i < t; ++i) {
+        out[i] = tmp[t - 1 - i];
+    }
+    return t;
+}
+
+// Writes a float with two fractional digits. Returns the char count.
+static int WriteFloat(char* out, float f)
+{
+    int n = 0;
+    if (f < 0.0f) {
+        out[n++] = '-';
+        f = -f;
+    }
+    long ip = static_cast<long>(f);
+    long fd = static_cast<long>((f - static_cast<float>(ip)) * 100.0f + 0.5f);
+    if (fd >= 100) { // rounding carried into the integer part
+        fd -= 100;
+        ip += 1;
+    }
+    n += WriteInt(out + n, ip);
+    out[n++] = '.';
+    out[n++] = static_cast<char>('0' + (fd / 10) % 10);
+    out[n++] = static_cast<char>('0' + fd % 10);
+    return n;
+}
+
+extern "C" void MakeStringVector3f(void)
+{
+    const Vector3f v = gau_read_Vector3f(0);
+    char buf[128];
+    int n = 0;
+    buf[n++] = '{';
+    n += WriteFloat(buf + n, v.x);
+    buf[n++] = ',';
+    buf[n++] = ' ';
+    n += WriteFloat(buf + n, v.y);
+    buf[n++] = ',';
+    buf[n++] = ' ';
+    n += WriteFloat(buf + n, v.z);
+    buf[n++] = '}';
+    gau_output_str(0, buf, n);
 }

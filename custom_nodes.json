@@ -151,46 +151,31 @@
       ]
     },
     {
-      "category": "Function",
-      "execFn": "MakeString",
-      "name": "MakeStringVector3f",
-      "pins": [
-        {
-          "direction": "in",
-          "name": "arg0",
-          "type": "Vector3f"
-        },
-        {
-          "direction": "out",
-          "name": "out",
-          "type": "string"
-        }
-      ],
-      "properties": [
-        {
-          "container": "none",
-          "default": "",
-          "name": "data",
-          "type": "string"
-        }
-      ]
-    },
-    {
-      "category": "Function",
+      "category": "Pure",
+      "execFn": "wasm:MakeStringFromVector3f",
       "name": "MakeStringFromVector3f",
       "pins": [
         {
           "direction": "in",
-          "name": "in",
-          "type": "Vector3f"
+          "name": "x",
+          "type": "float"
+        },
+        {
+          "direction": "in",
+          "name": "y",
+          "type": "float"
+        },
+        {
+          "direction": "in",
+          "name": "z",
+          "type": "float"
         },
         {
           "direction": "out",
-          "name": "out",
+          "name": "result",
           "type": "string"
         }
-      ],
-      "properties": []
+      ]
     }
   ],
   "types": []

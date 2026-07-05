@@ -92,10 +92,8 @@
       "y": 126.34602355957031
     },
     {
-      "class": "MakeString",
-      "properties": [
-        ""
-      ],
+      "class": "MakeStringFromVector3f",
+      "properties": [],
       "x": 742.3482055664063,
       "y": 289.2586975097656
     }
