@@ -16,13 +16,15 @@ bool RunCommandCaptured(const std::string& commandLine, std::string& outOutput,
     outOutput.clear();
     outExitCode = -1;
 
-#if defined(_WIN32)
-    // cmd.exe strips the outermost quotes of the /C string; wrapping the
-    // whole line keeps embedded quoted paths intact.
-    const std::string fullCommand = "\"" + commandLine + "\" 2>&1";
-#else
+    // Append the stderr redirect and nothing else. cmd.exe /C strips the outer
+    // quote pair only when the whole string both starts and ends with a quote;
+    // the trailing " 2>&1" makes the last character a non-quote, so an exe path
+    // quoted at the front (e.g. "C:/.../clang.exe" ... "src.cpp") is parsed as
+    // written instead of having its inner quotes stripped/merged. Wrapping the
+    // line in an extra quote pair (the earlier approach) left the string ending
+    // in "1", which cmd then failed to parse, so the command never ran and its
+    // real diagnostics were lost.
     const std::string fullCommand = commandLine + " 2>&1";
-#endif
 
     FILE* pipe = GAU_POPEN(fullCommand.c_str(), "r");
     if (pipe == nullptr) {

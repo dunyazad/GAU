@@ -1290,6 +1290,12 @@ static void BuildWasmFunction(const FunctionEditorAction& action,
             && output.find("No available targets") != std::string::npos) {
             logLines.push_back("hint: install the official LLVM (llvm.org) and set"
                                " tools.clangPath in editor_settings.json");
+        } else if (output.find("is not recognized") != std::string::npos
+                   || output.find("cannot find") != std::string::npos
+                   || output.find("No such file") != std::string::npos) {
+            logLines.push_back("hint: clang not found (tried '" + clang
+                               + "'). Install LLVM with the wasm32 target, bundle it under"
+                                 " tools/llvm/bin, or set tools.clangPath in editor_settings.json");
         }
         functionEditor.SetStatus("Build failed (see Output panel)");
         return;
