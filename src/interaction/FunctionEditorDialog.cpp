@@ -43,6 +43,19 @@ void FunctionEditorDialog::Open(float screenWidth, float screenHeight)
     EnsureCaretVisible();
 }
 
+void FunctionEditorDialog::SetContent(const std::string& name, const std::string& text)
+{
+    functionName = name;
+    source = text;
+    caretIndex = source.size();
+    selectionAnchor = NO_SELECTION;
+    mouseSelecting = false;
+    firstVisibleLine = 0;
+    focus = Focus::Source;
+    statusText.clear();
+    EnsureCaretVisible();
+}
+
 void FunctionEditorDialog::Close()
 {
     open = false;

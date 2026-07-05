@@ -54,6 +54,10 @@ public:
     void Open(float screenWidth, float screenHeight);
     void Close();
 
+    // Replaces the dialog's function name and source text (used to continue
+    // editing an existing wasm_src file instead of the blank template).
+    void SetContent(const std::string& name, const std::string& text);
+
     // Consumes all events while open.
     FunctionEditorAction HandleEvent(const EditorInputEvent& event);
 

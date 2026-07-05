@@ -50,6 +50,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1315,6 +1316,25 @@ static void BuildWasmFunction(const FunctionEditorAction& action,
     functionEditor.Close();
 }
 
+// Opens the wasm function editor, continuing from the on-disk source when
+// the function already has a wasm_src file. Without this the dialog always
+// starts from the built-in template, so a session's Build & Save silently
+// overwrote any external edits made to the file since the app started.
+static void OpenFunctionEditor(FunctionEditorDialog& functionEditor, float screenWidth,
+                               float screenHeight)
+{
+    functionEditor.Open(screenWidth, screenHeight);
+    const std::string sourcePath =
+        std::string(WASM_SOURCE_DIR) + "/" + functionEditor.GetFunctionName() + ".cpp";
+    std::ifstream file(sourcePath, std::ios::binary);
+    if (!file.is_open()) {
+        return;
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    functionEditor.SetContent(functionEditor.GetFunctionName(), buffer.str());
+}
+
 // Runs the active graph; log output fans out to the console, the log
 // panel buffer, and later runtime views.
 static void RunActiveGraph(const Document& doc, std::vector<std::string>& logLines)
@@ -1831,7 +1851,7 @@ int main(int argc, char** argv)
                                      contextMenu.GetSpawnCanvasY(), doc.graph, doc.undoStack,
                                      controller.selectedNodes);
                 } else if (action.type == ContextMenuAction::Type::OpenFunctionEditor) {
-                    functionEditor.Open(screenWidth, screenHeight);
+                    OpenFunctionEditor(functionEditor, screenWidth, screenHeight);
                 } else if (action.type == ContextMenuAction::Type::ArrangeNodes) {
                     ApplyAutoLayout(AllNodeIds(doc.graph), doc.graph, layoutCache, doc.undoStack);
                 } else {
