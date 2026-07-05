@@ -357,6 +357,18 @@ if(MSVC)
 endif()
 add_test(NAME serializer_tests COMMAND serializer_tests)
 
+add_executable(node_class_loader_tests
+    tests/NodeClassLoaderTests.cpp
+    src/model/NodeClass.cpp
+    src/model/UserType.cpp
+    src/model/NodeClassLoader.cpp
+)
+target_include_directories(node_class_loader_tests PRIVATE src external)
+if(MSVC)
+    target_compile_definitions(node_class_loader_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME node_class_loader_tests COMMAND node_class_loader_tests)
+
 add_executable(exec_tests
     tests/ExecTests.cpp
     src/model/NodeGraph.cpp

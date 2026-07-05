@@ -55,16 +55,37 @@ static bool ParsePinType(const std::string& text, PinType& outType)
     return true;
 }
 
+// Returns true when the name refers to an Object-category node class:
+// either one already registered, or one declared with category "Object" in
+// the file currently being loaded (forward references within one file are
+// legal because entries can be reordered by delete/re-add cycles).
+static bool IsObjectClassName(const std::string& name,
+                              const std::vector<std::string>& pendingObjectClasses)
+{
+    const NodeClass* nodeClass = NodeClass::FindByName(name.c_str());
+    if (nodeClass != nullptr && nodeClass->GetCategory() == "Object") {
+        return true;
+    }
+    for (const std::string& pending : pendingObjectClasses) {
+        if (pending == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Resolves a JSON type string to a PinType. A builtin keyword yields that
 // type with an empty typeName; any other string is looked up in the user
-// type registry, yielding PinType::UserType with the name preserved.
-static bool ResolveTypeString(const std::string& text, PinType& outType, std::string& outTypeName)
+// type registry or among Object-category node classes (FR-TYP-6 nominal
+// object types), yielding PinType::UserType with the name preserved.
+static bool ResolveTypeString(const std::string& text, PinType& outType, std::string& outTypeName,
+                              const std::vector<std::string>& pendingObjectClasses)
 {
     if (ParsePinType(text, outType)) {
         outTypeName.clear();
         return true;
     }
-    if (UserTypeRegistry::Find(text) != nullptr) {
+    if (UserTypeRegistry::Find(text) != nullptr || IsObjectClassName(text, pendingObjectClasses)) {
         outType = PinType::UserType;
         outTypeName = text;
         return true;
@@ -72,7 +93,8 @@ static bool ResolveTypeString(const std::string& text, PinType& outType, std::st
     return false;
 }
 
-static bool ParsePin(const json& pinJson, PinDef& outPin, std::string& outError)
+static bool ParsePin(const json& pinJson, PinDef& outPin,
+                     const std::vector<std::string>& pendingObjectClasses, std::string& outError)
 {
     if (!pinJson.is_object()) {
         outError = "pin entry is not an object";
@@ -84,7 +106,8 @@ static bool ParsePin(const json& pinJson, PinDef& outPin, std::string& outError)
         return false;
     }
     if (!pinJson.contains("type") || !pinJson["type"].is_string()
-        || !ResolveTypeString(pinJson["type"].get<std::string>(), outPin.type, outPin.typeName)) {
+        || !ResolveTypeString(pinJson["type"].get<std::string>(), outPin.type, outPin.typeName,
+                              pendingObjectClasses)) {
         outError = "pin has missing or invalid 'type'";
         return false;
     }
@@ -214,10 +237,13 @@ static bool ParseContainerDefault(const json& defaultJson, PropertyDef& property
 }
 
 static bool ParsePropertyValueType(const json& parent, const char* field, PinType& outType,
-                                   std::string& outTypeName, std::string& outError)
+                                   std::string& outTypeName,
+                                   const std::vector<std::string>& pendingObjectClasses,
+                                   std::string& outError)
 {
     if (!parent.contains(field) || !parent[field].is_string()
-        || !ResolveTypeString(parent[field].get<std::string>(), outType, outTypeName)) {
+        || !ResolveTypeString(parent[field].get<std::string>(), outType, outTypeName,
+                              pendingObjectClasses)) {
         outError = std::string("missing or invalid '") + field + "'";
         return false;
     }
@@ -237,7 +263,9 @@ static bool ParsePropertyValueType(const json& parent, const char* field, PinTyp
     return true;
 }
 
-static bool ParseProperty(const json& propertyJson, PropertyDef& outProperty, std::string& outError)
+static bool ParseProperty(const json& propertyJson, PropertyDef& outProperty,
+                          const std::vector<std::string>& pendingObjectClasses,
+                          std::string& outError)
 {
     if (!propertyJson.is_object()) {
         outError = "property entry is not an object";
@@ -263,7 +291,7 @@ static bool ParseProperty(const json& propertyJson, PropertyDef& outProperty, st
 
     std::string typeError;
     if (!ParsePropertyValueType(propertyJson, "type", outProperty.type, outProperty.typeName,
-                                typeError)) {
+                                pendingObjectClasses, typeError)) {
         outError = "property '" + outProperty.name + "': " + typeError;
         return false;
     }
@@ -281,7 +309,7 @@ static bool ParseProperty(const json& propertyJson, PropertyDef& outProperty, st
     if (outProperty.container == PropertyContainer::Map && propertyJson.contains("keyType")) {
         std::string keyError;
         if (!ParsePropertyValueType(propertyJson, "keyType", outProperty.keyType,
-                                    outProperty.keyTypeName, keyError)) {
+                                    outProperty.keyTypeName, pendingObjectClasses, keyError)) {
             outError = "property '" + outProperty.name + "': " + keyError;
             return false;
         }
@@ -299,7 +327,9 @@ static bool ParseProperty(const json& propertyJson, PropertyDef& outProperty, st
     return true;
 }
 
-static bool ParseUserType(const json& typeJson, std::string& outError)
+static bool ParseUserType(const json& typeJson,
+                          const std::vector<std::string>& pendingObjectClasses,
+                          std::string& outError)
 {
     if (!typeJson.is_object()) {
         outError = "type entry is not an object";
@@ -346,7 +376,7 @@ static bool ParseUserType(const json& typeJson, std::string& outError)
                 StructField field;
                 field.name = fieldJson["name"].get<std::string>();
                 if (!ResolveTypeString(fieldJson["type"].get<std::string>(), field.type,
-                                       field.typeName)) {
+                                       field.typeName, pendingObjectClasses)) {
                     outError = "struct type '" + type.name + "' field '" + field.name
                              + "' has unknown type";
                     return false;
@@ -360,7 +390,9 @@ static bool ParseUserType(const json& typeJson, std::string& outError)
     return true;
 }
 
-static bool ParseNodeClass(const json& classJson, std::string& outError)
+static bool ParseNodeClass(const json& classJson,
+                           const std::vector<std::string>& pendingObjectClasses,
+                           std::string& outError)
 {
     if (!classJson.is_object()) {
         outError = "node class entry is not an object";
@@ -396,7 +428,7 @@ static bool ParseNodeClass(const json& classJson, std::string& outError)
         for (const json& pinJson : classJson["pins"]) {
             PinDef pin;
             std::string pinError;
-            if (!ParsePin(pinJson, pin, pinError)) {
+            if (!ParsePin(pinJson, pin, pendingObjectClasses, pinError)) {
                 outError = "node class '" + name + "': " + pinError;
                 return false;
             }
@@ -413,7 +445,7 @@ static bool ParseNodeClass(const json& classJson, std::string& outError)
         for (const json& propertyJson : classJson["properties"]) {
             PropertyDef property;
             std::string propertyError;
-            if (!ParseProperty(propertyJson, property, propertyError)) {
+            if (!ParseProperty(propertyJson, property, pendingObjectClasses, propertyError)) {
                 outError = "node class '" + name + "': " + propertyError;
                 return false;
             }
@@ -693,11 +725,25 @@ int LoadNodeClassesFromFile(const std::string& path, std::vector<std::string>& o
         return 0;
     }
 
+    // Pre-scan: names of Object-category classes declared in this file.
+    // FR-TYP-6 lets such classes serve as nominal object pin/field types,
+    // and an entry may reference one that appears later in the array
+    // (delete/re-add reorders entries), so resolution cannot rely on
+    // registration order alone.
+    std::vector<std::string> pendingObjectClasses;
+    for (const json& classJson : root["nodeClasses"]) {
+        if (classJson.is_object() && classJson.contains("name") && classJson["name"].is_string()
+            && classJson.contains("category") && classJson["category"].is_string()
+            && classJson["category"].get<std::string>() == "Object") {
+            pendingObjectClasses.push_back(classJson["name"].get<std::string>());
+        }
+    }
+
     // Types load first so class pins/properties can reference them.
     if (root.contains("types") && root["types"].is_array()) {
         for (const json& typeJson : root["types"]) {
             std::string error;
-            if (!ParseUserType(typeJson, error)) {
+            if (!ParseUserType(typeJson, pendingObjectClasses, error)) {
                 outErrors.push_back(error);
             }
         }
@@ -706,7 +752,7 @@ int LoadNodeClassesFromFile(const std::string& path, std::vector<std::string>& o
     int loadedCount = 0;
     for (const json& classJson : root["nodeClasses"]) {
         std::string error;
-        if (ParseNodeClass(classJson, error)) {
+        if (ParseNodeClass(classJson, pendingObjectClasses, error)) {
             ++loadedCount;
         } else {
             outErrors.push_back(error);

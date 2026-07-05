@@ -3,30 +3,81 @@
 #include <cstdio>
 
 #if defined(_WIN32)
-#define GAU_POPEN _popen
-#define GAU_PCLOSE _pclose
-#else
-#define GAU_POPEN popen
-#define GAU_PCLOSE pclose
-#endif
 
+#include <windows.h>
+
+// Runs the command line directly through CreateProcess with stdout/stderr
+// captured over an anonymous pipe. No shell is involved, so cmd.exe's
+// quote-stripping rules (which used to truncate a quoted exe path like
+// "C:/Program Files/LLVM/bin/clang.exe" down to C:/Program) never apply;
+// the quoted command line is parsed by the child's own argv parsing.
 bool RunCommandCaptured(const std::string& commandLine, std::string& outOutput,
                         int& outExitCode)
 {
     outOutput.clear();
     outExitCode = -1;
 
-    // Append the stderr redirect and nothing else. cmd.exe /C strips the outer
-    // quote pair only when the whole string both starts and ends with a quote;
-    // the trailing " 2>&1" makes the last character a non-quote, so an exe path
-    // quoted at the front (e.g. "C:/.../clang.exe" ... "src.cpp") is parsed as
-    // written instead of having its inner quotes stripped/merged. Wrapping the
-    // line in an extra quote pair (the earlier approach) left the string ending
-    // in "1", which cmd then failed to parse, so the command never ran and its
-    // real diagnostics were lost.
-    const std::string fullCommand = commandLine + " 2>&1";
+    SECURITY_ATTRIBUTES security{};
+    security.nLength = sizeof(security);
+    security.bInheritHandle = TRUE;
 
-    FILE* pipe = GAU_POPEN(fullCommand.c_str(), "r");
+    HANDLE readEnd = nullptr;
+    HANDLE writeEnd = nullptr;
+    if (!CreatePipe(&readEnd, &writeEnd, &security, 0)) {
+        return false;
+    }
+    // The parent's read end must not leak into the child, or the pipe never
+    // signals EOF after the child exits.
+    SetHandleInformation(readEnd, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdOutput = writeEnd;
+    startup.hStdError = writeEnd;
+    startup.hStdInput = nullptr;
+
+    // CreateProcess may modify the command line buffer in place.
+    std::string mutableCommand = commandLine;
+    PROCESS_INFORMATION process{};
+    const BOOL created =
+        CreateProcessA(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE,
+                       CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
+    CloseHandle(writeEnd);
+    if (!created) {
+        CloseHandle(readEnd);
+        return false;
+    }
+
+    char buffer[512];
+    DWORD bytesRead = 0;
+    while (ReadFile(readEnd, buffer, sizeof(buffer), &bytesRead, nullptr) && bytesRead > 0) {
+        outOutput.append(buffer, bytesRead);
+    }
+    CloseHandle(readEnd);
+
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD exitCode = 0;
+    if (GetExitCodeProcess(process.hProcess, &exitCode)) {
+        outExitCode = static_cast<int>(exitCode);
+    }
+    CloseHandle(process.hProcess);
+    CloseHandle(process.hThread);
+    return true;
+}
+
+#else
+
+// POSIX: popen already runs through /bin/sh, whose quoting rules handle a
+// quoted exe path correctly; only stderr needs redirecting into the pipe.
+bool RunCommandCaptured(const std::string& commandLine, std::string& outOutput,
+                        int& outExitCode)
+{
+    outOutput.clear();
+    outExitCode = -1;
+
+    const std::string fullCommand = commandLine + " 2>&1";
+    FILE* pipe = popen(fullCommand.c_str(), "r");
     if (pipe == nullptr) {
         return false;
     }
@@ -35,6 +86,8 @@ bool RunCommandCaptured(const std::string& commandLine, std::string& outOutput,
     while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         outOutput += buffer;
     }
-    outExitCode = GAU_PCLOSE(pipe);
+    outExitCode = pclose(pipe);
     return true;
 }
+
+#endif
