@@ -11,22 +11,155 @@
 
 namespace gau {
 
-// Bridges a NodeEval to the wasm host so gau_* imports read this node's inputs/
-// properties and write its outputs. Indices match pin order.
+// Bridges a NodeEval to the wasm host. The host ABI is scalar-only, so a
+// struct-typed pin is flattened into its leaf scalars over a flat index space:
+// the wasm side reads/writes consecutive indices (matching the generated
+// gau_read_/gau_write_ helpers), and the runtime reassembles struct outputs
+// afterwards. This is what lets custom struct types flow through wasm nodes on
+// a single pin instead of being decomposed into separate component pins.
 namespace {
-class NodeEvalWasmContext : public WasmNodeContext
+
+// Appends the scalar leaves of a value in field order (recurses into structs).
+void FlattenLeaves(const Value& value, std::vector<Value>& out)
+{
+    if (const StructVal* sv = std::get_if<StructVal>(&value.data)) {
+        for (const Value& field : sv->fields) {
+            FlattenLeaves(field, out);
+        }
+        return;
+    }
+    out.push_back(value);
+}
+
+// Number of scalar leaves a type occupies in the flat index space.
+int LeafCount(const TypeRegistry& types, TypeId id)
+{
+    const TypeDesc* desc = types.Resolve(id);
+    if (desc != nullptr && desc->tag == TypeTag::Struct) {
+        const StructDef* def = types.FindStruct(desc->name);
+        int count = 0;
+        if (def != nullptr) {
+            for (const StructField& field : def->fields) {
+                count += LeafCount(types, field.type);
+            }
+        }
+        return count;
+    }
+    return 1;
+}
+
+// Rebuilds a value of the given type by consuming leaves from `leaves` starting
+// at `cursor` (recurses into structs).
+Value AssembleLeaves(const TypeRegistry& types, TypeId id, const std::vector<Value>& leaves,
+                     std::size_t& cursor)
+{
+    const TypeDesc* desc = types.Resolve(id);
+    if (desc != nullptr && desc->tag == TypeTag::Struct) {
+        const StructDef* def = types.FindStruct(desc->name);
+        StructVal sv;
+        if (def != nullptr) {
+            for (const StructField& field : def->fields) {
+                sv.fields.push_back(AssembleLeaves(types, field.type, leaves, cursor));
+            }
+        }
+        return Value(ValueData(std::move(sv)));
+    }
+    Value leaf = (cursor < leaves.size()) ? leaves[cursor] : Value::None();
+    ++cursor;
+    return leaf;
+}
+
+class FlatWasmContext : public WasmNodeContext
 {
 public:
-    explicit NodeEvalWasmContext(NodeEval& eval) : eval(eval) {}
-    Value Input(int index) override { return eval.In(index); }
+    FlatWasmContext(NodeEval& eval, const TypeRegistry& types) : eval(eval), types(types)
+    {
+        int offset = 0;
+        for (const Pin& pin : eval.node->inputs) {
+            inputLeafOffset.push_back(offset);
+            offset += LeafCount(types, pin.type);
+        }
+        inputCache.assign(eval.node->inputs.size(), {});
+        inputCached.assign(eval.node->inputs.size(), false);
+
+        offset = 0;
+        for (const Pin& pin : eval.node->outputs) {
+            outputLeafOffset.push_back(offset);
+            offset += LeafCount(types, pin.type);
+        }
+        totalOutputLeaves = offset;
+        outputLeaves.assign(static_cast<std::size_t>(offset), Value::None());
+        outputWritten.assign(static_cast<std::size_t>(offset), false);
+    }
+
+    Value Input(int index) override
+    {
+        const std::vector<Pin>& pins = eval.node->inputs;
+        for (std::size_t i = 0; i < pins.size(); ++i) {
+            const int base = inputLeafOffset[i];
+            const int next = base + LeafCount(types, pins[i].type);
+            if (index < base || index >= next) {
+                continue;
+            }
+            if (!inputCached[i]) {
+                FlattenLeaves(eval.In(static_cast<int>(i)), inputCache[i]);
+                inputCached[i] = true;
+            }
+            const std::size_t leaf = static_cast<std::size_t>(index - base);
+            return leaf < inputCache[i].size() ? inputCache[i][leaf] : Value::None();
+        }
+        return Value::None();
+    }
+
     Value Property(int index) override { return eval.Prop(index); }
-    void SetOutput(int index, Value value) override { eval.Out(index, std::move(value)); }
+
+    void SetOutput(int index, Value value) override
+    {
+        if (index >= 0 && index < totalOutputLeaves) {
+            outputLeaves[static_cast<std::size_t>(index)] = std::move(value);
+            outputWritten[static_cast<std::size_t>(index)] = true;
+        }
+    }
+
     void RunExec(int index) override { eval.Then(index); }
     void Log(const std::string& message) override { eval.rt->Log(message); }
 
+    // Reassembles struct/scalar output pins from the leaves the wasm wrote.
+    // Pins the wasm never wrote are left untouched (default pull behavior).
+    void Finalize()
+    {
+        const std::vector<Pin>& pins = eval.node->outputs;
+        for (std::size_t i = 0; i < pins.size(); ++i) {
+            const int base = outputLeafOffset[i];
+            const int count = LeafCount(types, pins[i].type);
+            bool anyWritten = false;
+            for (int k = 0; k < count; ++k) {
+                if (base + k < totalOutputLeaves
+                    && outputWritten[static_cast<std::size_t>(base + k)]) {
+                    anyWritten = true;
+                    break;
+                }
+            }
+            if (!anyWritten) {
+                continue;
+            }
+            std::size_t cursor = static_cast<std::size_t>(base);
+            eval.Out(static_cast<int>(i), AssembleLeaves(types, pins[i].type, outputLeaves, cursor));
+        }
+    }
+
 private:
     NodeEval& eval;
+    const TypeRegistry& types;
+    std::vector<int> inputLeafOffset;
+    std::vector<std::vector<Value>> inputCache;
+    std::vector<bool> inputCached;
+    std::vector<int> outputLeafOffset;
+    std::vector<Value> outputLeaves;
+    std::vector<bool> outputWritten;
+    int totalOutputLeaves = 0;
 };
+
 } // namespace
 
 void BuiltinRegistry::Register(std::string name, NodeFn fn)
@@ -280,9 +413,11 @@ void Runtime::EvaluateNode(const Node& node)
         NodeEval eval;
         eval.rt = this;
         eval.node = &node;
-        NodeEvalWasmContext context(eval);
+        FlatWasmContext context(eval, *types);
         std::string error;
-        if (!WasmHost::Instance().CallNodeFunction(cls->execFn.substr(5), context, error)) {
+        if (WasmHost::Instance().CallNodeFunction(cls->execFn.substr(5), context, error)) {
+            context.Finalize();
+        } else {
             Log("wasm error: " + error);
         }
     } else {

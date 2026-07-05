@@ -77,6 +77,12 @@ build/Debug/gau2.exe                    # v2 앱
   EvaluateNode 가 execFn="wasm:<export>" 클래스를 NodeEval 브리지로 wasm3 에 dispatch. gau2
   시작 시 wasm/ 디렉터리 모듈 로드. gau_exec 가 wasm3 링크(v1 model/Value 미유입, v2 계층
   분리 유지). hand-assembled adder.wasm(clang 불필요)으로 4+6=10 검증. `wasm_host_tests`.
+  - **struct pin 평탄화(FlatWasmContext)** — host ABI 는 스칼라뿐이지만 struct 타입 pin 을
+    leaf 스칼라 연속 인덱스 공간으로 평탄화. wasm 은 생성된 gau_read_/gau_write_ 헬퍼로
+    연속 인덱스를 읽고, 런타임이 출력 leaf 를 struct 로 재조립. 덕분에 커스텀 struct 타입이
+    분해된 컴포넌트 pin 이 아니라 **단일 pin** 으로 wasm 노드를 통과. 실제 clang 빌드
+    AddVector3f.wasm 으로 Vector3f 2개 -> (11,22,33) 검증. 중첩 struct 재귀 지원, array/map
+    leaf 는 미지원.
 
 ctest 전체 25개 스위트 통과(v1 포함). 위 기능 로직은 라이브러리 + 테스트로 완성. gau2 UI
 배선 현황은 아래 참조.
