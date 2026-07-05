@@ -18,6 +18,122 @@ void   gau_exec(int outputIndex);
 void   gau_log(const char* text, int length);
 }
 
+// --- Text helpers -------------------------------------------------
+// Wasm functions build freestanding (-nostdlib): <iostream>,
+// <string>, snprintf etc. are unavailable. Build text in a GauStr
+// and hand it to an output pin or the log:
+//
+//   GauStr s = gau_str("{");
+//   gau_append(s, v.x);        // float/double, 2 fraction digits
+//   gau_append(s, ", ");
+//   gau_append(s, 42);         // int/long
+//   gau_append(s, '}');
+//   gau_output_str(0, s);
+
+struct GauStr
+{
+    char data[512];
+    int len;
+};
+
+inline GauStr gau_str(const char* text = "")
+{
+    GauStr s;
+    s.len = 0;
+    while (text[s.len] != 0 && s.len < 511) {
+        s.data[s.len] = text[s.len];
+        ++s.len;
+    }
+    s.data[s.len] = 0;
+    return s;
+}
+
+inline GauStr& gau_append(GauStr& s, char c)
+{
+    if (s.len < 511) {
+        s.data[s.len] = c;
+        ++s.len;
+        s.data[s.len] = 0;
+    }
+    return s;
+}
+
+inline GauStr& gau_append(GauStr& s, const char* text)
+{
+    while (*text != 0) {
+        gau_append(s, *text);
+        ++text;
+    }
+    return s;
+}
+
+inline GauStr& gau_append(GauStr& s, long value)
+{
+    unsigned long u;
+    if (value < 0) {
+        gau_append(s, '-');
+        u = static_cast<unsigned long>(-(value + 1)) + 1ul;
+    } else {
+        u = static_cast<unsigned long>(value);
+    }
+    char digits[20];
+    int count = 0;
+    do {
+        digits[count] = static_cast<char>('0' + u % 10ul);
+        ++count;
+        u /= 10ul;
+    } while (u != 0ul);
+    while (count > 0) {
+        --count;
+        gau_append(s, digits[count]);
+    }
+    return s;
+}
+
+inline GauStr& gau_append(GauStr& s, int value)
+{
+    return gau_append(s, static_cast<long>(value));
+}
+
+inline GauStr& gau_append(GauStr& s, double value, int decimals = 2)
+{
+    if (value < 0.0) {
+        gau_append(s, '-');
+        value = -value;
+    }
+    double scale = 1.0;
+    for (int i = 0; i < decimals; ++i) {
+        scale *= 10.0;
+    }
+    value += 0.5 / scale;
+    unsigned long ip = static_cast<unsigned long>(value);
+    gau_append(s, static_cast<long>(ip));
+    if (decimals > 0) {
+        gau_append(s, '.');
+        double frac = value - static_cast<double>(ip);
+        for (int i = 0; i < decimals; ++i) {
+            frac *= 10.0;
+            int digit = static_cast<int>(frac);
+            if (digit > 9) {
+                digit = 9;
+            }
+            frac -= static_cast<double>(digit);
+            gau_append(s, static_cast<char>('0' + digit));
+        }
+    }
+    return s;
+}
+
+inline void gau_output_str(int index, const GauStr& s)
+{
+    gau_output_str(index, s.data, s.len);
+}
+
+inline void gau_log(const GauStr& s)
+{
+    gau_log(s.data, s.len);
+}
+
 struct Vector3f
 {
     float x;

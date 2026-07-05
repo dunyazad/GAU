@@ -1291,6 +1291,12 @@ static void BuildWasmFunction(const FunctionEditorAction& action,
             && output.find("No available targets") != std::string::npos) {
             logLines.push_back("hint: install the official LLVM (llvm.org) and set"
                                " tools.clangPath in editor_settings.json");
+        } else if (output.find("fatal error") != std::string::npos
+                   && output.find("file not found") != std::string::npos) {
+            logLines.push_back("hint: wasm functions build freestanding (-nostdlib);"
+                               " standard headers like <iostream>/<string> are unavailable."
+                               " Include only \"gau_api.h\" and build text with GauStr +"
+                               " gau_append (see the helpers in gau_api.h)");
         } else if (output.find("is not recognized") != std::string::npos
                    || output.find("cannot find") != std::string::npos
                    || output.find("No such file") != std::string::npos) {
