@@ -18,6 +18,7 @@
 #include "exec/StructNodes.h"
 #include "exec/VariableNodes.h"
 #include "exec/WasmHost.h"
+#include "exec/WasmNodes.h"
 #include "interaction/Align.h"
 #include "interaction/HitTest2.h"
 #include "interaction/InteractionFsm.h"
@@ -875,6 +876,82 @@ int main()
         panels.push_back(std::move(panel));
     }
 
+    // Wasm node editor panel (top-left, under Type): author a node class
+    // bound to a wasm module export (execFn "wasm:<name>"). Add In/Add Out
+    // accumulate pins of the selected type; Make Wasm Node registers the
+    // class (export name = class name) and it lands in the palette. The
+    // module itself comes from wasm/*.wasm; Reload Wasm re-scans that
+    // directory so an externally rebuilt module is picked up without a
+    // restart (FR-WASM-1).
+    std::vector<PinDef> pendingPins;
+    ui::Label* pinsLabel = nullptr;
+    {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
+        auto column = std::make_unique<ui::Column>(4.0f);
+
+        auto nameRow = std::make_unique<ui::Row>(6.0f);
+        auto nameField =
+            std::make_unique<ui::TextField>("WasmNode", [](const std::string&) {}, 110.0f);
+        ui::TextField* wasmNameField = nameField.get();
+        nameRow->Add(std::make_unique<ui::Label>("Wasm"));
+        nameRow->Add(std::move(nameField));
+        column->Add(std::move(nameRow));
+
+        auto pinRow = std::make_unique<ui::Row>(6.0f);
+        auto pinField = std::make_unique<ui::TextField>("pin", [](const std::string&) {}, 90.0f);
+        ui::TextField* pinNameField = pinField.get();
+        pinRow->Add(std::move(pinField));
+        // Shared by Add In / Add Out; captures main-scope state by reference.
+        const auto addPin = [&, pinNameField](PinDirection dir) {
+            if (pinNameField->Value().empty()) {
+                return;
+            }
+            pendingPins.push_back(PinDef{dir, selTypeId, pinNameField->Value()});
+            pinNameField->SetValue("");
+        };
+        pinRow->Add(std::make_unique<ui::Button>(
+            "Add In", [addPin]() { addPin(PinDirection::Input); }));
+        pinRow->Add(std::make_unique<ui::Button>(
+            "Add Out", [addPin]() { addPin(PinDirection::Output); }));
+        auto plabel = std::make_unique<ui::Label>("pins: 0");
+        pinsLabel = plabel.get();
+        pinRow->Add(std::move(plabel));
+        column->Add(std::move(pinRow));
+
+        auto makeRow = std::make_unique<ui::Row>(6.0f);
+        makeRow->Add(std::make_unique<ui::Button>("Make Wasm Node", [&, wasmNameField]() {
+            const std::string name = wasmNameField->Value();
+            if (name.empty() || pendingPins.empty()) {
+                return;
+            }
+            RegisterWasmNodeClass(classes, name, "CustomObject", pendingPins);
+            if (!WasmHost::Instance().HasFunction(name)) {
+                std::printf("wasm: no loaded module exports '%s' yet; put a module in wasm/"
+                            " and press Reload Wasm\n",
+                            name.c_str());
+            }
+            pendingPins.clear();
+            if (rebuildPalette) {
+                rebuildPalette();
+            }
+        }));
+        makeRow->Add(std::make_unique<ui::Button>("Reload Wasm", [&]() {
+            std::vector<std::string> errs;
+            const int n = WasmHost::Instance().LoadModulesFromDirectory("wasm", errs);
+            for (const std::string& e : errs) {
+                std::printf("wasm: %s\n", e.c_str());
+            }
+            std::printf("wasm: reloaded %d module(s)\n", n);
+        }));
+        column->Add(std::move(makeRow));
+
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(column));
+        const ui::Size s = raw->Measure(painter, ui::Size{360.0f, 100.0f});
+        raw->Arrange(ui::Rect{8.0f, 424.0f, s.w + 8.0f, s.h + 8.0f});
+        panels.push_back(std::move(panel));
+    }
+
     // Save/load the whole project. Load resets the registries in place (so
     // references stay valid), re-imports, then rebinds behaviors and rebuilds
     // dependent UI.
@@ -902,6 +979,7 @@ int main()
         shownNode = INVALID_ID;
         histories.clear();
         pendingFields.clear();
+        pendingPins.clear();
         if (rebuildPalette) {
             rebuildPalette();
         }
@@ -1133,6 +1211,9 @@ int main()
         }
         if (fieldsLabel != nullptr) {
             fieldsLabel->SetText("fields: " + std::to_string(pendingFields.size()));
+        }
+        if (pinsLabel != nullptr) {
+            pinsLabel->SetText("pins: " + std::to_string(pendingPins.size()));
         }
 
         if (infoLabel != nullptr) {

@@ -61,6 +61,7 @@ add_library(gau_exec STATIC
     src/exec/ConversionNodes.cpp
     src/exec/VariableNodes.cpp
     src/exec/WasmHost.cpp
+    src/exec/WasmNodes.cpp
 )
 target_include_directories(gau_exec PUBLIC src)
 target_link_libraries(gau_exec PUBLIC gau_model gau_core wasm3)
@@ -307,6 +308,11 @@ add_executable(project_file_tests tests/ProjectFileTests.cpp)
 target_include_directories(project_file_tests PRIVATE src external)
 target_link_libraries(project_file_tests PRIVATE gau_exec gau_io)
 add_test(NAME project_file_tests COMMAND project_file_tests)
+
+add_executable(wasm_nodes_tests tests/WasmNodesTests.cpp)
+target_include_directories(wasm_nodes_tests PRIVATE src external)
+target_link_libraries(wasm_nodes_tests PRIVATE gau_exec gau_io)
+add_test(NAME wasm_nodes_tests COMMAND wasm_nodes_tests)
 
 add_executable(interaction_tests tests/InteractionTests.cpp)
 target_include_directories(interaction_tests PRIVATE src)
