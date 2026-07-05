@@ -104,6 +104,12 @@ public:
                               std::vector<PropertyDef> newProperties,
                               std::string newExecFnName);
 
+    // Drops a dynamic class from the registry so it no longer appears in the
+    // creation menu or name lookup. The owning storage entry is kept alive, so
+    // any Node instances still pointing at it remain valid (orphaned). Returns
+    // false for builtin (non-dynamic) or unknown classes.
+    static bool RemoveDynamic(const NodeClass* target);
+
 private:
     static std::vector<const NodeClass*>& MutableRegistry();
     static std::vector<std::unique_ptr<NodeClass>>& MutableDynamicStorage();

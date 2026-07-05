@@ -425,6 +425,9 @@ void DrawClassEditorDialog(NVGcontext* vg, const ClassEditorDialog& dialog,
                               : (dialog.IsEditMode() ? "Save" : "Create");
     DrawButton(vg, dialog.OkButtonRect(), okLabel, true);
     DrawButton(vg, dialog.CancelButtonRect(), "Cancel", false);
+    if (dialog.CanDelete()) {
+        DrawButton(vg, dialog.DeleteButtonRect(), "Delete", false);
+    }
 
     // Open dropdown draws on top of everything else.
     DrawOpenDropdown(vg, dialog);

@@ -620,6 +620,25 @@ bool RemoveUserTypeFromFile(const std::string& path, const std::string& name, st
     return WriteClassFile(path, root, outError);
 }
 
+bool RemoveNodeClassFromFile(const std::string& path, const std::string& name,
+                             std::string& outError)
+{
+    json root;
+    if (!ReadClassFile(path, root, outError)) {
+        return false;
+    }
+    json kept = json::array();
+    for (json& entry : root["nodeClasses"]) {
+        if (entry.is_object() && entry.contains("name") && entry["name"].is_string()
+            && entry["name"].get<std::string>() == name) {
+            continue;
+        }
+        kept.push_back(entry);
+    }
+    root["nodeClasses"] = kept;
+    return WriteClassFile(path, root, outError);
+}
+
 bool AppendNodeClassToFile(const std::string& path, const std::string& name,
                            const std::string& category, const std::vector<PinDef>& pins,
                            const std::vector<PropertyDef>& properties,

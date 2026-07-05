@@ -21,6 +21,9 @@ struct ClassEditorAction
         Submit,
         // Validated user-type submission; the type* fields carry it.
         SubmitType,
+        // Delete the class/type being edited. name carries the target name;
+        // editTarget is set for a node class, null for a user type.
+        Delete,
         // Dialog cancelled/closed without creating anything.
         Closed,
     };
@@ -140,6 +143,9 @@ public:
     float GetX() const { return panelX; }
     float GetY() const { return panelY; }
     float GetPanelHeight() const;
+    // True when an existing class/type is open for editing, so a Delete
+    // button is offered.
+    bool CanDelete() const;
     const std::string& GetClassNameText() const { return classNameText; }
     const std::string& GetCategoryText() const { return categoryText; }
     // Suggestions shown by the category dropdown (existing categories).
@@ -201,6 +207,10 @@ public:
     float ErrorCenterY() const;
     UIRect OkButtonRect() const;
     UIRect CancelButtonRect() const;
+    // Delete button (left of OK); only meaningful when CanDelete() is true.
+    UIRect DeleteButtonRect() const;
+    // Grab strip at the top of the panel: dragging it moves the window.
+    UIRect TitleBarRect() const;
 
 private:
     float TabsRowY() const;
@@ -240,6 +250,10 @@ private:
     bool open = false;
     float panelX = 0.0f;
     float panelY = 0.0f;
+    // Title-bar drag state (window move).
+    bool draggingTitle = false;
+    float dragOffsetX = 0.0f;
+    float dragOffsetY = 0.0f;
     DialogEditMode mode = DialogEditMode::Class;
     std::string typeNameText;
     UserTypeKind typeKind = UserTypeKind::Enum;

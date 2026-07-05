@@ -58,6 +58,23 @@ bool NodeClass::UpdateDynamic(const NodeClass* target, std::string newName,
     return false;
 }
 
+bool NodeClass::RemoveDynamic(const NodeClass* target)
+{
+    if (target == nullptr || !target->dynamic) {
+        return false;
+    }
+    // Remove from the registry only; leave the owning storage entry alive so
+    // existing Node instances keep a valid pointer (orphaned but non-dangling).
+    std::vector<const NodeClass*>& registry = MutableRegistry();
+    for (std::size_t i = 0; i < registry.size(); ++i) {
+        if (registry[i] == target) {
+            registry.erase(registry.begin() + static_cast<std::ptrdiff_t>(i));
+            return true;
+        }
+    }
+    return false;
+}
+
 std::vector<const NodeClass*>& NodeClass::MutableRegistry()
 {
     // Construct-on-first-use: safe against static initialization order

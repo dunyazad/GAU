@@ -52,6 +52,7 @@ void FunctionEditorDialog::Close()
     caretIndex = 0;
     selectionAnchor = NO_SELECTION;
     mouseSelecting = false;
+    draggingTitle = false;
     firstVisibleLine = 0;
 }
 
@@ -91,6 +92,11 @@ UIRect FunctionEditorDialog::CancelButtonRect() const
 {
     const UIRect build = BuildButtonRect();
     return UIRect{build.x + build.w + GAP, build.y, BUTTON_WIDTH, BUTTON_HEIGHT};
+}
+
+UIRect FunctionEditorDialog::TitleBarRect() const
+{
+    return UIRect{panelX, panelY, WIDTH, PADDING + TITLE_HEIGHT};
 }
 
 int FunctionEditorDialog::LineCount() const
@@ -403,6 +409,12 @@ FunctionEditorAction FunctionEditorDialog::HandleEvent(const EditorInputEvent& e
                 action.type = FunctionEditorAction::Type::Closed;
                 return action;
             }
+            if (TitleBarRect().Contains(event.x, event.y)) {
+                draggingTitle = true;
+                dragOffsetX = event.x - panelX;
+                dragOffsetY = event.y - panelY;
+                break;
+            }
             if (NameFieldRect().Contains(event.x, event.y)) {
                 focus = Focus::Name;
             } else if (SourceRect().Contains(event.x, event.y)) {
@@ -423,14 +435,25 @@ FunctionEditorAction FunctionEditorDialog::HandleEvent(const EditorInputEvent& e
         break;
 
     case EditorInputType::MouseMove:
-        if (mouseSelecting) {
+        if (draggingTitle) {
+            panelX = event.x - dragOffsetX;
+            panelY = event.y - dragOffsetY;
+            if (panelX < 0.0f) {
+                panelX = 0.0f;
+            }
+            if (panelY < 0.0f) {
+                panelY = 0.0f;
+            }
+        } else if (mouseSelecting) {
             caretIndex = IndexFromMouse(event.x, event.y);
             EnsureCaretVisible();
         }
         break;
 
     case EditorInputType::MouseUp:
-        if (mouseSelecting) {
+        if (draggingTitle) {
+            draggingTitle = false;
+        } else if (mouseSelecting) {
             mouseSelecting = false;
             if (selectionAnchor == caretIndex) {
                 selectionAnchor = NO_SELECTION;

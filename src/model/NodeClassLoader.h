@@ -56,6 +56,11 @@ bool UpdateNodeClassInFile(const std::string& path, const std::string& oldName,
                            const std::vector<PropertyDef>& properties,
                            const std::string& execFnName, std::string& outError);
 
+// Removes the node class entry whose "name" equals name from the file's
+// "nodeClasses" array. Returns false if the file is unreadable/unwritable.
+bool RemoveNodeClassFromFile(const std::string& path, const std::string& name,
+                             std::string& outError);
+
 // Writes a user type into the file's "types" array (added or replaced by
 // name). Returns false and sets outError on failure.
 bool SaveUserTypeToFile(const std::string& path, const UserType& type, std::string& outError);

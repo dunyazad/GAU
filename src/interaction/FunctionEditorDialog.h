@@ -87,6 +87,8 @@ public:
     UIRect SourceRect() const;
     UIRect BuildButtonRect() const;
     UIRect CancelButtonRect() const;
+    // Grab strip at the top of the panel: dragging it moves the window.
+    UIRect TitleBarRect() const;
 
 private:
     static constexpr std::size_t NO_SELECTION = static_cast<std::size_t>(-1);
@@ -104,6 +106,10 @@ private:
     bool open = false;
     float panelX = 0.0f;
     float panelY = 0.0f;
+    // Title-bar drag state (window move).
+    bool draggingTitle = false;
+    float dragOffsetX = 0.0f;
+    float dragOffsetY = 0.0f;
     Focus focus = Focus::Source;
     std::string functionName;
     std::string source;

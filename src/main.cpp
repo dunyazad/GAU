@@ -666,6 +666,24 @@ static void ProcessMenuAction(const ContextMenuAction& action, const ContextMenu
 // dialog submission and persists it to custom_nodes.json.
 static void ProcessClassEditorAction(const ClassEditorAction& action, NodeGraph& graph)
 {
+    if (action.type == ClassEditorAction::Type::Delete) {
+        std::string error;
+        if (action.editTarget != nullptr) {
+            // Node class: drop from the registry (instances stay valid as
+            // orphans) and from the file.
+            NodeClass::RemoveDynamic(action.editTarget);
+            if (!RemoveNodeClassFromFile("custom_nodes.json", action.name, error)) {
+                std::printf("custom_nodes.json: %s\n", error.c_str());
+            }
+        } else if (!action.name.empty()) {
+            // User type.
+            UserTypeRegistry::Remove(action.name);
+            if (!RemoveUserTypeFromFile("custom_nodes.json", action.name, error)) {
+                std::printf("custom_nodes.json: %s\n", error.c_str());
+            }
+        }
+        return;
+    }
     if (action.type == ClassEditorAction::Type::SubmitType) {
         // A rename drops the old entry (registry + file) before saving.
         if (!action.typeEditOldName.empty() && action.typeEditOldName != action.userType.name) {

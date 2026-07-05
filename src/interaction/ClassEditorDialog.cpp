@@ -192,6 +192,7 @@ void ClassEditorDialog::OpenForEdit(const NodeClass& target, float screenWidth, 
 void ClassEditorDialog::Close()
 {
     open = false;
+    draggingTitle = false;
     editTarget = nullptr;
     mode = DialogEditMode::Class;
     typeNameText.clear();
@@ -519,6 +520,25 @@ UIRect ClassEditorDialog::CancelButtonRect() const
 {
     return UIRect{panelX + WIDTH - PADDING - BUTTON_WIDTH, ButtonRowY(),
                   BUTTON_WIDTH, BUTTON_HEIGHT};
+}
+
+UIRect ClassEditorDialog::DeleteButtonRect() const
+{
+    return UIRect{panelX + WIDTH - PADDING - BUTTON_WIDTH * 3.0f - GAP * 2.0f, ButtonRowY(),
+                  BUTTON_WIDTH, BUTTON_HEIGHT};
+}
+
+UIRect ClassEditorDialog::TitleBarRect() const
+{
+    return UIRect{panelX, panelY, WIDTH, PADDING + TITLE_HEIGHT};
+}
+
+bool ClassEditorDialog::CanDelete() const
+{
+    if (mode == DialogEditMode::Type) {
+        return !typeEditOldName.empty();
+    }
+    return editTarget != nullptr;
 }
 
 int ClassEditorDialog::GetDropdownOptionCount() const
@@ -884,6 +904,17 @@ ClassEditorAction ClassEditorDialog::HandleEvent(const EditorInputEvent& event)
 
     switch (event.type) {
     case EditorInputType::MouseMove:
+        if (draggingTitle) {
+            panelX = event.x - dragOffsetX;
+            panelY = event.y - dragOffsetY;
+            if (panelX < 0.0f) {
+                panelX = 0.0f;
+            }
+            if (panelY < 0.0f) {
+                panelY = 0.0f;
+            }
+            break;
+        }
         if (dropdownKind != DialogDropdownKind::None) {
             const UIRect list = DropdownListRect();
             if (list.Contains(event.x, event.y)) {
@@ -899,6 +930,12 @@ ClassEditorAction ClassEditorDialog::HandleEvent(const EditorInputEvent& event)
             if (HandleDropdownMouseDown(event.x, event.y)) {
                 break;
             }
+            if (TitleBarRect().Contains(event.x, event.y)) {
+                draggingTitle = true;
+                dragOffsetX = event.x - panelX;
+                dragOffsetY = event.y - panelY;
+                break;
+            }
             if (TabClassRect().Contains(event.x, event.y)) {
                 SwitchMode(DialogEditMode::Class);
                 break;
@@ -906,6 +943,15 @@ ClassEditorAction ClassEditorDialog::HandleEvent(const EditorInputEvent& event)
             if (TabTypeRect().Contains(event.x, event.y)) {
                 SwitchMode(DialogEditMode::Type);
                 break;
+            }
+            if (CanDelete() && DeleteButtonRect().Contains(event.x, event.y)) {
+                action.type = ClassEditorAction::Type::Delete;
+                action.name = (mode == DialogEditMode::Type)
+                                  ? typeEditOldName
+                                  : std::string(editTarget->GetName());
+                action.editTarget = (mode == DialogEditMode::Type) ? nullptr : editTarget;
+                Close();
+                return action;
             }
             if (OkButtonRect().Contains(event.x, event.y)) {
                 return mode == DialogEditMode::Type ? TrySubmitType() : TrySubmit();
@@ -945,6 +991,9 @@ ClassEditorAction ClassEditorDialog::HandleEvent(const EditorInputEvent& event)
         break;
 
     case EditorInputType::MouseUp:
+        draggingTitle = false;
+        break;
+
     case EditorInputType::MouseWheel:
         break;
     }
