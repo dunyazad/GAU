@@ -48,7 +48,11 @@ bool Widget::OnEvent(const Event& event)
 {
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         Widget* child = it->get();
-        if (event.IsPositional() && !child->Bounds().Contains(event.x, event.y)) {
+        // MouseMove reaches every child regardless of bounds so hover
+        // state can clear when the pointer leaves it; the other
+        // positional events stay bounds-filtered.
+        if (event.IsPositional() && event.type != EventType::MouseMove
+            && !child->Bounds().Contains(event.x, event.y)) {
             continue;
         }
         if (child->OnEvent(event)) {

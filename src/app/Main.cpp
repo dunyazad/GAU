@@ -297,6 +297,12 @@ static void DrawPopupMenu(NVGcontext* vg, const PopupMenu& menu)
     nvgRestore(vg);
 }
 
+// Minimap panel rect, anchored to the bottom-right corner.
+static ViewRect MinimapPanelRect(float screenW, float screenH)
+{
+    return ViewRect{screenW - 240.0f - 16.0f, screenH - 130.0f - 16.0f, 240.0f, 130.0f};
+}
+
 // Draws a minimap of all nodes plus the current viewport (FR-UX-1).
 static void DrawMinimap(NVGcontext* vg, const render::Canvas& canvas,
                         const render::GraphLayout& layout, float screenW, float screenH)
@@ -309,7 +315,7 @@ static void DrawMinimap(NVGcontext* vg, const render::Canvas& canvas,
     if (!ComputeBounds(boxes, content)) {
         return;
     }
-    const ViewRect panel{screenW * 0.5f - 120.0f, screenH - 150.0f, 240.0f, 130.0f};
+    const ViewRect panel = MinimapPanelRect(screenW, screenH);
     const render::Vec2 tl = canvas.ScreenToCanvas(render::Vec2{0.0f, 0.0f});
     const render::Vec2 br = canvas.ScreenToCanvas(render::Vec2{screenW, screenH});
     const Bounds visible{tl.x, tl.y, br.x, br.y};
@@ -765,7 +771,9 @@ int main()
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{260.0f, 400.0f});
-        raw->Arrange(ui::Rect{initW - s.w - 16.0f, initH - s.h - 16.0f, s.w + 8.0f, s.h + 8.0f});
+        // Sits above the minimap, which owns the bottom-right corner.
+        raw->Arrange(ui::Rect{initW - s.w - 16.0f, initH - s.h - 130.0f - 32.0f, s.w + 8.0f,
+                              s.h + 8.0f});
         return panel;
     };
     const std::size_t propertyIndex = panels.size();
@@ -1152,7 +1160,7 @@ int main()
     const auto minimapClick = [&](float sx, float sy) -> bool {
         const float w = static_cast<float>(window.GetWidth());
         const float h = static_cast<float>(window.GetHeight());
-        const ViewRect panel{w * 0.5f - 120.0f, h - 150.0f, 240.0f, 130.0f};
+        const ViewRect panel = MinimapPanelRect(w, h);
         if (sx < panel.x || sx > panel.x + panel.w || sy < panel.y || sy > panel.y + panel.h) {
             return false;
         }
