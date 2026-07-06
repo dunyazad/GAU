@@ -40,12 +40,17 @@ public:
     void SetDataOutput(int dataIndex, Value value);
     void RunExecFlow(int execIndex);
 
+    // True once the wasm function drove the flow itself via gau_exec;
+    // the engine then skips the default continue-on-first-exec-output.
+    bool ExecFlowTriggered() const { return execFlowTriggered; }
+
     void Log(const std::string& message);
 
 private:
     ExecEngine& engine;
     const Node& node;
     int depth;
+    bool execFlowTriggered = false;
 };
 
 using NodeExecFn = void (*)(ExecContext&);

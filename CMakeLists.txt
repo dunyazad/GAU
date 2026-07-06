@@ -118,6 +118,7 @@ add_executable(gau
     src/render/ConfirmSaveDialogRenderer.cpp
     src/model/NodeGraph.cpp
     src/model/NodeClass.cpp
+    src/model/ExecPinPolicy.cpp
     src/model/UserType.cpp
     src/model/BuiltinNodeClasses.cpp
     src/model/NodeClassLoader.cpp
@@ -371,6 +372,16 @@ if(MSVC)
     target_compile_definitions(node_class_loader_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 add_test(NAME node_class_loader_tests COMMAND node_class_loader_tests)
+
+add_executable(exec_pin_policy_tests
+    tests/ExecPinPolicyTests.cpp
+    src/model/ExecPinPolicy.cpp
+)
+target_include_directories(exec_pin_policy_tests PRIVATE src)
+if(MSVC)
+    target_compile_definitions(exec_pin_policy_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME exec_pin_policy_tests COMMAND exec_pin_policy_tests)
 
 add_executable(wasm_signature_tests
     tests/WasmSignatureTests.cpp

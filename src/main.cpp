@@ -18,6 +18,7 @@
 #include "render/NodeLayoutCache.h"
 #include "render/ContextMenuRenderer.h"
 #include "model/NodeGraph.h"
+#include "model/ExecPinPolicy.h"
 #include "model/GraphClipboard.h"
 #include "model/NodeClassLoader.h"
 #include "model/EditorSettings.h"
@@ -709,29 +710,33 @@ static void ProcessClassEditorAction(const ClassEditorAction& action, NodeGraph&
     }
 
     std::string error;
+    // Exec pins are category policy, not user input: strip/insert and
+    // order them ahead of the data pins here so every registration path
+    // agrees.
+    const std::vector<PinDef> pins = NormalizeClassExecPins(action.category, action.pins);
 
     if (action.editTarget != nullptr) {
         const std::string oldName = action.editTarget->GetName();
         // The dialog does not edit the exec binding; preserve it.
         const std::string execFnName = action.editTarget->GetExecFnName();
         if (!NodeClass::UpdateDynamic(action.editTarget, action.name, action.category,
-                                      action.pins, action.properties, execFnName)) {
+                                      pins, action.properties, execFnName)) {
             std::printf("class editor: builtin class cannot be edited\n");
             return;
         }
         graph.RebuildNodesOfClass(*action.editTarget);
         if (!UpdateNodeClassInFile("custom_nodes.json", oldName, action.name, action.category,
-                                   action.pins, action.properties, execFnName, error)) {
+                                   pins, action.properties, execFnName, error)) {
             std::printf("custom_nodes.json: %s\n", error.c_str());
         }
         return;
     }
 
     NodeClass::AdoptDynamic(
-        std::make_unique<NodeClass>(action.name, action.category, action.pins, action.properties));
+        std::make_unique<NodeClass>(action.name, action.category, pins, action.properties));
 
     if (!AppendNodeClassToFile("custom_nodes.json", action.name, action.category,
-                               action.pins, action.properties, std::string(), error)) {
+                               pins, action.properties, std::string(), error)) {
         std::printf("custom_nodes.json: %s\n", error.c_str());
     }
 }
@@ -1216,6 +1221,9 @@ static void RegisterWasmNodeClass(const std::string& name, const std::string& ca
                                   std::vector<std::unique_ptr<Document>>& documents,
                                   std::vector<std::string>& logLines)
 {
+    // Exec pins follow the category policy regardless of how the pins
+    // were authored (directives or a typed signature).
+    pins = NormalizeClassExecPins(category, std::move(pins));
     const NodeClass* existing = NodeClass::FindByName(name.c_str());
     std::string error;
 

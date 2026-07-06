@@ -65,6 +65,7 @@ void ExecContext::SetDataOutput(int dataIndex, Value value)
 
 void ExecContext::RunExecFlow(int execIndex)
 {
+    execFlowTriggered = true;
     int seen = 0;
     for (std::size_t i = 0; i < node.outputs.size(); ++i) {
         if (node.outputs[i].type != PinType::Exec) {
@@ -179,6 +180,20 @@ void ExecEngine::RunNodeFunction(const Node& node, int depth)
         if (!WasmRuntime::Instance().CallNodeFunction(fnName.substr(5), context, error)) {
             aborted = true;
             Log("error: " + error);
+            return;
+        }
+        // A function that never called gau_exec continues down the first
+        // exec output by default; an explicit gau_exec (Branch-style
+        // control) suppresses this. Pure nodes have no exec outputs and
+        // simply end here.
+        if (!context.ExecFlowTriggered()) {
+            for (int outputIndex = 0; outputIndex < static_cast<int>(node.outputs.size());
+                 ++outputIndex) {
+                if (node.outputs[static_cast<std::size_t>(outputIndex)].type == PinType::Exec) {
+                    context.RunExecOutput(outputIndex);
+                    break;
+                }
+            }
         }
         return;
     }
