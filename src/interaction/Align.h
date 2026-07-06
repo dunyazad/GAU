@@ -46,4 +46,20 @@ std::vector<NodePos> ComputeAlign(const std::vector<NodeBox>& boxes, AlignMode m
 // extreme boxes stay put; fewer than three boxes yields no change.
 std::vector<NodePos> ComputeDistribute(const std::vector<NodeBox>& boxes, bool horizontal);
 
+// Directed edge between two boxes, as indices into the box list.
+struct LayoutEdge
+{
+    int from = 0;
+    int to = 0;
+};
+
+// Layered left-to-right auto layout (arrange): columns come from the
+// longest path over the edges (Kahn order; cyclic leftovers keep layer
+// 0), nodes within a column are ordered by the average row of their
+// predecessors to reduce link crossings, and the result is anchored at
+// the top-left of the set's current bounding box. Fewer than two boxes
+// yields no change.
+std::vector<NodePos> ComputeAutoLayout(const std::vector<NodeBox>& boxes,
+                                       const std::vector<LayoutEdge>& edges);
+
 } // namespace gau

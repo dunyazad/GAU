@@ -85,6 +85,26 @@ static void TestSmallSetsUnchanged()
     Check(Near(d[0].x, 0.0f) && Near(d[1].x, 100.0f), "two boxes unchanged by distribute");
 }
 
+// A -> B -> C chain arranges into three columns left to right; an
+// unlinked node shares the first column without overlapping.
+static void TestAutoLayoutLayers()
+{
+    std::vector<NodeBox> boxes = {NodeBox{1, 300.0f, 0.0f, 100.0f, 50.0f},
+                                  NodeBox{2, 0.0f, 200.0f, 100.0f, 50.0f},
+                                  NodeBox{3, 150.0f, 100.0f, 100.0f, 50.0f},
+                                  NodeBox{4, 500.0f, 500.0f, 100.0f, 50.0f}};
+    // 1 -> 3 -> 2; 4 unlinked.
+    const std::vector<LayoutEdge> edges = {LayoutEdge{0, 2}, LayoutEdge{2, 1}};
+    const auto out = ComputeAutoLayout(boxes, edges);
+    Check(out.size() == 4, "auto layout returns every box");
+    // Origin is the set's top-left corner (x from box 2, y from box 1).
+    Check(Near(out[0].x, 0.0f), "layer 0 sits at the origin column");
+    Check(out[2].x > out[0].x, "successor moves one column right");
+    Check(out[1].x > out[2].x, "second successor moves further right");
+    Check(Near(out[3].x, out[0].x), "unlinked node shares the first column");
+    Check(!Near(out[3].y, out[0].y), "stacked nodes in a column do not overlap");
+}
+
 int main()
 {
     TestAlignLeft();
@@ -93,6 +113,7 @@ int main()
     TestAlignCenterHorizontal();
     TestDistributeHorizontal();
     TestSmallSetsUnchanged();
+    TestAutoLayoutLayers();
     if (failCount == 0) {
         std::printf("align_tests: all passed\n");
     }

@@ -610,6 +610,48 @@ int main()
         }
     };
 
+    // Arranges the whole active graph into layered left-to-right columns
+    // (the v1 "Arrange Nodes" action).
+    const auto applyAutoLayout = [&]() {
+        const render::GraphLayout layout = render::ComputeGraphLayout(*active, classes, measure);
+        std::vector<NodeBox> boxes;
+        for (const render::NodeLayout& nl : layout.Nodes()) {
+            boxes.push_back(NodeBox{nl.id, nl.x, nl.y, nl.w, nl.h});
+        }
+        if (boxes.size() < 2) {
+            return;
+        }
+        const auto boxIndex = [&boxes](NodeId id) {
+            for (std::size_t i = 0; i < boxes.size(); ++i) {
+                if (boxes[i].id == id) {
+                    return static_cast<int>(i);
+                }
+            }
+            return -1;
+        };
+        std::vector<LayoutEdge> edges;
+        for (const Link& link : active->Links()) {
+            const Node* fromNode = active->FindPinOwner(link.fromPin);
+            const Node* toNode = active->FindPinOwner(link.toPin);
+            if (fromNode == nullptr || toNode == nullptr) {
+                continue;
+            }
+            const int from = boxIndex(fromNode->id);
+            const int to = boxIndex(toNode->id);
+            if (from >= 0 && to >= 0 && from != to) {
+                edges.push_back(LayoutEdge{from, to});
+            }
+        }
+        recordUndo();
+        for (const NodePos& p : ComputeAutoLayout(boxes, edges)) {
+            Node* n = active->FindNode(p.id);
+            if (n != nullptr) {
+                n->x = p.x;
+                n->y = p.y;
+            }
+        }
+    };
+
     // Debug state: breakpoints and a persistent runtime when stepping.
     std::vector<NodeId> breakpoints;
     std::unique_ptr<Runtime> debug;
@@ -808,6 +850,9 @@ int main()
                 categories.push_back(cls.category);
             }
         }
+        // Graph-wide actions first (v1 canvas menu), then the classes.
+        spawnMenu.items.push_back(PopupMenu::Item{"Actions", true, ""});
+        spawnMenu.items.push_back(PopupMenu::Item{"Arrange Nodes", false, "action:arrange"});
         for (const std::string& cat : categories) {
             spawnMenu.items.push_back(PopupMenu::Item{cat, true, ""});
             for (const NodeClass& cls : classes.All()) {
@@ -1373,10 +1418,14 @@ int main()
                     if (picked.empty()) {
                         // Clicked outside or on a header: just close.
                     } else if (wasSpawn) {
-                        const NodeClass* cls = classes.Find(picked);
-                        if (cls != nullptr) {
-                            recordUndo();
-                            graph.AddNode(*cls, menu.canvasX, menu.canvasY);
+                        if (picked == "action:arrange") {
+                            applyAutoLayout();
+                        } else {
+                            const NodeClass* cls = classes.Find(picked);
+                            if (cls != nullptr) {
+                                recordUndo();
+                                graph.AddNode(*cls, menu.canvasX, menu.canvasY);
+                            }
                         }
                     } else if (picked == "Edit Fn") {
                         const Node* n = graph.FindNode(actionTarget);
