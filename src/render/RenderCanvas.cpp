@@ -23,6 +23,18 @@ void Canvas::PanByScreenDelta(float dx, float dy)
     pan.y += dy;
 }
 
+void Canvas::SetView(Vec2 newPan, float newZoom)
+{
+    pan = newPan;
+    zoom = newZoom;
+    if (zoom < MIN_ZOOM) {
+        zoom = MIN_ZOOM;
+    }
+    if (zoom > MAX_ZOOM) {
+        zoom = MAX_ZOOM;
+    }
+}
+
 void Canvas::ZoomAt(Vec2 screenPoint, float factor)
 {
     const Vec2 canvasBefore = ScreenToCanvas(screenPoint);

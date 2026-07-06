@@ -39,18 +39,92 @@
 
 #include <nanovg.h>
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
 using namespace gau;
+
+// Editor session state persisted across runs: window shape, view
+// transform, panel toggles and the last opened project (reopened on
+// start). Lives next to the executable / working directory.
+static const char* SESSION_FILE = "gau_session.json";
+
+struct SessionState
+{
+    int windowW = 1280;
+    int windowH = 800;
+    bool maximized = false;
+    float panX = 0.0f;
+    float panY = 0.0f;
+    float zoom = 1.0f;
+    std::string projectPath;
+    bool showVars = false;
+    bool showTypes = false;
+    bool showWasm = false;
+};
+
+static SessionState LoadSession()
+{
+    SessionState state;
+    std::ifstream file(SESSION_FILE, std::ios::binary);
+    if (!file.is_open()) {
+        return state;
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    const nlohmann::json root = nlohmann::json::parse(buffer.str(), nullptr, false);
+    if (root.is_discarded() || !root.is_object()) {
+        return state;
+    }
+    state.windowW = root.value("windowW", state.windowW);
+    state.windowH = root.value("windowH", state.windowH);
+    state.maximized = root.value("maximized", state.maximized);
+    state.panX = root.value("panX", state.panX);
+    state.panY = root.value("panY", state.panY);
+    state.zoom = root.value("zoom", state.zoom);
+    state.projectPath = root.value("projectPath", state.projectPath);
+    state.showVars = root.value("showVars", state.showVars);
+    state.showTypes = root.value("showTypes", state.showTypes);
+    state.showWasm = root.value("showWasm", state.showWasm);
+    if (state.windowW < 320) {
+        state.windowW = 1280;
+    }
+    if (state.windowH < 240) {
+        state.windowH = 800;
+    }
+    return state;
+}
+
+static void SaveSession(const SessionState& state)
+{
+    nlohmann::json root;
+    root["windowW"] = state.windowW;
+    root["windowH"] = state.windowH;
+    root["maximized"] = state.maximized;
+    root["panX"] = state.panX;
+    root["panY"] = state.panY;
+    root["zoom"] = state.zoom;
+    root["projectPath"] = state.projectPath;
+    root["showVars"] = state.showVars;
+    root["showTypes"] = state.showTypes;
+    root["showWasm"] = state.showWasm;
+    std::ofstream file(SESSION_FILE, std::ios::binary);
+    if (file.is_open()) {
+        file << root.dump(2) << "\n";
+    }
+}
 
 static NodeClass Cls(std::string name, std::string category, std::vector<PinDef> pins,
                      std::vector<PropertyDef> props = {})
@@ -183,6 +257,43 @@ static void DrawComments(NVGcontext* vg, const render::Canvas& canvas,
         nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
         nvgText(vg, tl.x + 6.0f, tl.y + 4.0f, c.text.c_str(), nullptr);
     }
+}
+
+// Two-level background grid (design spec section 5): 16px minor cells
+// and 8x major cells in canvas units, panning and zooming with the
+// graph. Minor lines fade out when they would pack tighter than a few
+// pixels.
+static void DrawGrid(NVGcontext* vg, const render::Canvas& canvas, float screenW, float screenH)
+{
+    const auto drawLines = [&](float canvasStep, NVGcolor color) {
+        const float step = canvasStep * canvas.Zoom();
+        if (step < 4.0f) {
+            return;
+        }
+        const render::Vec2 pan = canvas.Pan();
+        float x = std::fmod(pan.x, step);
+        if (x < 0.0f) {
+            x += step;
+        }
+        nvgBeginPath(vg);
+        for (; x < screenW; x += step) {
+            nvgMoveTo(vg, x, 0.0f);
+            nvgLineTo(vg, x, screenH);
+        }
+        float y = std::fmod(pan.y, step);
+        if (y < 0.0f) {
+            y += step;
+        }
+        for (; y < screenH; y += step) {
+            nvgMoveTo(vg, 0.0f, y);
+            nvgLineTo(vg, screenW, y);
+        }
+        nvgStrokeColor(vg, color);
+        nvgStrokeWidth(vg, 1.0f);
+        nvgStroke(vg);
+    };
+    drawLines(16.0f, nvgRGB(41, 41, 43));
+    drawLines(128.0f, nvgRGB(26, 26, 28));
 }
 
 // A lightweight popup menu drawn with NanoVG (v1-style right-click UX):
@@ -354,9 +465,14 @@ static void DrawMinimap(NVGcontext* vg, const render::Canvas& canvas,
 
 int main()
 {
+    SessionState session = LoadSession();
+
     PlatformWindow window;
-    if (!window.Init("GAU", 1280, 800)) {
+    if (!window.Init("GAU", session.windowW, session.windowH)) {
         return 1;
+    }
+    if (session.maximized) {
+        window.Maximize();
     }
     NVGcontext* vg = CreatePlatformNVGContext();
     if (vg == nullptr) {
@@ -431,6 +547,7 @@ int main()
     std::string editContext = "main";
 
     render::Canvas canvas;
+    canvas.SetView(render::Vec2{session.panX, session.panY}, session.zoom);
 
     // Interaction state (declared early so panel callbacks can read the
     // selection). rebuildPalette is a legacy no-op hook: the spawn menu
@@ -515,9 +632,9 @@ int main()
     // Authoring panels hide behind toolbar toggles so the default view is
     // just the canvas plus a small toolbar (v1-style chrome). Node ops
     // (collapse/expand/align, Edit Fn) live in the node right-click menu.
-    bool showVars = false;
-    bool showTypes = false;
-    bool showWasm = false;
+    bool showVars = session.showVars;
+    bool showTypes = session.showTypes;
+    bool showWasm = session.showWasm;
 
     // Toolbar (top-left): run controls plus file/panel toggles.
     {
@@ -1110,8 +1227,13 @@ int main()
 
     // Save/load the whole project. Load resets the registries in place (so
     // references stay valid), re-imports, then rebinds behaviors and rebuilds
-    // dependent UI.
-    const auto saveProject = [&](const std::string& path) { SaveProjectFile(path, project); };
+    // dependent UI. The current path feeds the session file so the next
+    // start reopens the same project.
+    std::string currentProjectPath = session.projectPath;
+    const auto saveProject = [&](const std::string& path) {
+        SaveProjectFile(path, project);
+        currentProjectPath = path;
+    };
     const auto loadProject = [&](const std::string& path) {
         types.Clear();
         classes.Clear();
@@ -1136,10 +1258,23 @@ int main()
         histories.clear();
         pendingFields.clear();
         pendingPins.clear();
+        currentProjectPath = path;
         if (rebuildPalette) {
             rebuildPalette();
         }
     };
+
+    // Reopen the project from the previous session (falls back to the
+    // demo graph when the file is gone).
+    if (!currentProjectPath.empty()) {
+        std::ifstream probe(currentProjectPath, std::ios::binary);
+        if (probe.is_open()) {
+            probe.close();
+            loadProject(currentProjectPath);
+        } else {
+            currentProjectPath.clear();
+        }
+    }
 
     std::vector<EditorInputEvent> events;
     bool panning = false;
@@ -1498,6 +1633,7 @@ int main()
 
         window.BeginFrame(0.12f, 0.12f, 0.13f);
         nvgBeginFrame(vg, screenW, screenH, window.GetPixelRatio());
+        DrawGrid(vg, canvas, screenW, screenH);
         if (editingMain) {
             DrawComments(vg, canvas, project.comments);
         }
@@ -1523,6 +1659,18 @@ int main()
         nvgEndFrame(vg);
         window.EndFrame();
     }
+
+    session.windowW = window.GetWidth();
+    session.windowH = window.GetHeight();
+    session.maximized = window.IsMaximized();
+    session.panX = canvas.Pan().x;
+    session.panY = canvas.Pan().y;
+    session.zoom = canvas.Zoom();
+    session.projectPath = currentProjectPath;
+    session.showVars = showVars;
+    session.showTypes = showTypes;
+    session.showWasm = showWasm;
+    SaveSession(session);
 
     DestroyPlatformNVGContext(vg);
     window.Shutdown();

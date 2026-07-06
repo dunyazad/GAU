@@ -24,6 +24,10 @@ public:
     float Zoom() const { return zoom; }
     Vec2 Pan() const { return pan; }
 
+    // Restores a saved view transform (session load); zoom is clamped to
+    // the same range interactive zooming allows.
+    void SetView(Vec2 newPan, float newZoom);
+
 private:
     Vec2 pan{0.0f, 0.0f};
     float zoom = 1.0f;
