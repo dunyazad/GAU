@@ -185,6 +185,118 @@ static void DrawComments(NVGcontext* vg, const render::Canvas& canvas,
     }
 }
 
+// A lightweight popup menu drawn with NanoVG (v1-style right-click UX):
+// category headers plus clickable entries, hover highlight, wheel scroll.
+struct PopupMenu
+{
+    struct Item
+    {
+        std::string label;
+        bool header = false;
+        // Class name for spawn entries; action id for action entries.
+        std::string tag;
+    };
+
+    bool open = false;
+    float x = 0.0f;
+    float y = 0.0f;
+    // Canvas-space spawn location captured when the menu opened.
+    float canvasX = 0.0f;
+    float canvasY = 0.0f;
+    int hover = -1;
+    float scroll = 0.0f;
+    std::vector<Item> items;
+
+    static constexpr float WIDTH = 250.0f;
+    static constexpr float ITEM_H = 27.0f;
+    static constexpr float MAX_H = 460.0f;
+    static constexpr float PAD = 4.0f;
+
+    float ContentHeight() const
+    {
+        return static_cast<float>(items.size()) * ITEM_H + PAD * 2.0f;
+    }
+
+    float Height() const
+    {
+        const float h = ContentHeight();
+        return h < MAX_H ? h : MAX_H;
+    }
+
+    bool Contains(float px, float py) const
+    {
+        return px >= x && px <= x + WIDTH && py >= y && py <= y + Height();
+    }
+
+    int IndexAt(float px, float py) const
+    {
+        if (!Contains(px, py)) {
+            return -1;
+        }
+        const int index = static_cast<int>((py - y - PAD + scroll) / ITEM_H);
+        return (index >= 0 && index < static_cast<int>(items.size())) ? index : -1;
+    }
+
+    void ScrollBy(float delta)
+    {
+        scroll -= delta * ITEM_H;
+        const float maxScroll = ContentHeight() - Height();
+        if (scroll < 0.0f) {
+            scroll = 0.0f;
+        }
+        if (scroll > maxScroll) {
+            scroll = maxScroll > 0.0f ? maxScroll : 0.0f;
+        }
+    }
+};
+
+static void DrawPopupMenu(NVGcontext* vg, const PopupMenu& menu)
+{
+    if (!menu.open) {
+        return;
+    }
+    const float h = menu.Height();
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, menu.x, menu.y, PopupMenu::WIDTH, h, 4.0f);
+    nvgFillColor(vg, nvgRGBA(28, 28, 32, 248));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBA(70, 70, 78, 255));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    nvgSave(vg);
+    nvgIntersectScissor(vg, menu.x, menu.y, PopupMenu::WIDTH, h);
+    nvgFontSize(vg, 15.0f);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    for (std::size_t i = 0; i < menu.items.size(); ++i) {
+        const PopupMenu::Item& item = menu.items[i];
+        const float rowY = menu.y + PopupMenu::PAD + static_cast<float>(i) * PopupMenu::ITEM_H
+                         - menu.scroll;
+        if (rowY + PopupMenu::ITEM_H < menu.y || rowY > menu.y + h) {
+            continue;
+        }
+        if (!item.header && static_cast<int>(i) == menu.hover) {
+            nvgBeginPath(vg);
+            nvgRect(vg, menu.x + 3.0f, rowY, PopupMenu::WIDTH - 6.0f, PopupMenu::ITEM_H);
+            nvgFillColor(vg, nvgRGBA(50, 90, 160, 255));
+            nvgFill(vg);
+        }
+        if (item.header) {
+            nvgFontFace(vg, "sans-bold");
+            nvgFillColor(vg, nvgRGBA(150, 150, 160, 255));
+            nvgText(vg, menu.x + 10.0f, rowY + PopupMenu::ITEM_H * 0.5f, item.label.c_str(),
+                    nullptr);
+        } else {
+            nvgFontFace(vg, "sans");
+            nvgFillColor(vg, nvgRGBA(230, 230, 235, 255));
+            nvgText(vg, menu.x + 22.0f, rowY + PopupMenu::ITEM_H * 0.5f, item.label.c_str(),
+                    nullptr);
+        }
+    }
+    nvgRestore(vg);
+}
+
 // Draws a minimap of all nodes plus the current viewport (FR-UX-1).
 static void DrawMinimap(NVGcontext* vg, const render::Canvas& canvas,
                         const render::GraphLayout& layout, float screenW, float screenH)
@@ -315,7 +427,9 @@ int main()
     render::Canvas canvas;
 
     // Interaction state (declared early so panel callbacks can read the
-    // selection and rebuild the palette).
+    // selection). rebuildPalette is a legacy no-op hook: the spawn menu
+    // rebuilds from the live registry every time it opens, so class
+    // changes need no explicit refresh. Callers keep the guarded call.
     InteractionFsm fsm;
     int funcCount = 0;
     std::function<void()> rebuildPalette;
@@ -380,7 +494,6 @@ int main()
 
     // Retained UI panels (positioned once against the initial window size).
     bool runRequested = false;
-    int spawnCount = 0;
     std::vector<std::unique_ptr<ui::Widget>> panels;
     const float initW = static_cast<float>(window.GetWidth());
     const float initH = static_cast<float>(window.GetHeight());
@@ -393,7 +506,14 @@ int main()
     // overlap regardless of font size or how many rows each one needs.
     float leftY = 8.0f;
 
-    // Run panel (top-left): related buttons grouped one row per concern.
+    // Authoring panels hide behind toolbar toggles so the default view is
+    // just the canvas plus a small toolbar (v1-style chrome). Node ops
+    // (collapse/expand/align, Edit Fn) live in the node right-click menu.
+    bool showVars = false;
+    bool showTypes = false;
+    bool showWasm = false;
+
+    // Toolbar (top-left): run controls plus file/panel toggles.
     {
         auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
         auto column = std::make_unique<ui::Column>(4.0f);
@@ -420,55 +540,17 @@ int main()
                 debug->Run(10000);
             }
         }));
-        column->Add(std::move(runRow));
-
-        auto graphRow = std::make_unique<ui::Row>(4.0f);
-        graphRow->Add(std::make_unique<ui::Button>("Collapse", [&]() {
-            const std::vector<NodeId> sel = fsm.Selection();
-            if (sel.empty()) {
-                return;
-            }
-            const std::string name = "Func" + std::to_string(++funcCount);
-            recordUndo();
-            const NodeId call =
-                CollapseSelection(*active, types, classes, builtins, functions, sel, name);
-            if (call != INVALID_ID) {
-                fsm.ClearSelection();
-                if (rebuildPalette) {
-                    rebuildPalette();
-                }
-            }
-        }));
-        graphRow->Add(std::make_unique<ui::Button>("Expand", [&]() {
-            const std::vector<NodeId>& sel = fsm.Selection();
-            if (sel.empty()) {
-                return;
-            }
-            recordUndo();
-            if (ExpandCall(*active, types, classes, functions, sel[0])) {
-                fsm.ClearSelection();
-            }
-        }));
-        graphRow->Add(std::make_unique<ui::Button>("Undo", [&]() {
+        runRow->Add(std::make_unique<ui::Button>("Undo", [&]() {
             if (undoActive()) {
                 fsm.ClearSelection();
             }
         }));
-        graphRow->Add(std::make_unique<ui::Button>("Redo", [&]() {
+        runRow->Add(std::make_unique<ui::Button>("Redo", [&]() {
             if (redoActive()) {
                 fsm.ClearSelection();
             }
         }));
-        column->Add(std::move(graphRow));
-
-        auto alignRow = std::make_unique<ui::Row>(4.0f);
-        alignRow->Add(std::make_unique<ui::Button>(
-            "Align L", [&applyAlign]() { applyAlign(false, AlignMode::Left, false); }));
-        alignRow->Add(std::make_unique<ui::Button>(
-            "Align T", [&applyAlign]() { applyAlign(false, AlignMode::Top, false); }));
-        alignRow->Add(std::make_unique<ui::Button>(
-            "Distribute H", [&applyAlign]() { applyAlign(true, AlignMode::Left, true); }));
-        column->Add(std::move(alignRow));
+        column->Add(std::move(runRow));
 
         auto fileRow = std::make_unique<ui::Row>(4.0f);
         fileRow->Add(std::make_unique<ui::Button>("Save", [&window]() {
@@ -496,26 +578,31 @@ int main()
                 project.comments.pop_back();
             }
         }));
+        fileRow->Add(std::make_unique<ui::Button>("Vars", [&showVars]() {
+            showVars = !showVars;
+        }));
+        fileRow->Add(std::make_unique<ui::Button>("Types", [&showTypes]() {
+            showTypes = !showTypes;
+        }));
+        fileRow->Add(std::make_unique<ui::Button>("Wasm", [&showWasm]() {
+            showWasm = !showWasm;
+        }));
         column->Add(std::move(fileRow));
 
-        // Function body editing: enter a selected Call node's body, return
-        // to the main graph, grow/shrink the interface.
+        ui::Widget* raw = panel.get();
+        raw->Add(std::move(column));
+        const ui::Size s = raw->Measure(painter, ui::Size{700.0f, 120.0f});
+        raw->Arrange(ui::Rect{8.0f, leftY, s.w + 8.0f, s.h + 8.0f});
+        leftY += s.h + 16.0f;
+        panels.push_back(std::move(panel));
+    }
+
+    // Function edit panel: visible only while a function body is being
+    // edited (leave with Main, grow/shrink the interface here).
+    const std::size_t fnPanelIndex = panels.size();
+    {
+        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
         auto fnRow = std::make_unique<ui::Row>(4.0f);
-        fnRow->Add(std::make_unique<ui::Button>("Edit Fn", [&]() {
-            const std::vector<NodeId>& sel = fsm.Selection();
-            if (sel.empty()) {
-                return;
-            }
-            const Node* n = active->FindNode(sel[0]);
-            FunctionDef* def = (n != nullptr) ? functions.Find(n->className) : nullptr;
-            if (def == nullptr) {
-                return;
-            }
-            active = def->body.get();
-            editingDef = def;
-            editContext = def->name;
-            fsm.ClearSelection();
-        }));
         fnRow->Add(std::make_unique<ui::Button>("Main", [&]() {
             active = project.graph.get();
             editingDef = nullptr;
@@ -550,11 +637,9 @@ int main()
                                     builtins, types, project);
             }
         }));
-        column->Add(std::move(fnRow));
-
         ui::Widget* raw = panel.get();
-        raw->Add(std::move(column));
-        const ui::Size s = raw->Measure(painter, ui::Size{600.0f, 300.0f});
+        raw->Add(std::move(fnRow));
+        const ui::Size s = raw->Measure(painter, ui::Size{600.0f, 60.0f});
         raw->Arrange(ui::Rect{8.0f, leftY, s.w + 8.0f, s.h + 8.0f});
         leftY += s.h + 16.0f;
         panels.push_back(std::move(panel));
@@ -572,40 +657,60 @@ int main()
         }
         return false;
     };
-    const auto buildPalette = [&]() -> std::unique_ptr<ui::Widget> {
-        auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
-        auto column = std::make_unique<ui::Column>(4.0f);
-        for (const NodeClass& c : classes.All()) {
-            const std::string name = c.name;
-            if (isMarshallingClass(name)) {
+    // Node creation is a right-click spawn menu (v1 UX): items rebuild
+    // from the live registry every time the menu opens, so there is no
+    // permanent palette panel and nothing to refresh on class changes.
+    PopupMenu spawnMenu;
+    PopupMenu actionMenu;
+    NodeId actionTarget = INVALID_ID;
+    const auto openSpawnMenu = [&](float sx, float sy) {
+        spawnMenu = PopupMenu{};
+        spawnMenu.open = true;
+        const render::Vec2 c = canvas.ScreenToCanvas(render::Vec2{sx, sy});
+        spawnMenu.canvasX = c.x;
+        spawnMenu.canvasY = c.y;
+        std::vector<std::string> categories;
+        for (const NodeClass& cls : classes.All()) {
+            if (isMarshallingClass(cls.name)) {
                 continue;
             }
-            column->Add(std::make_unique<ui::Button>(
-                "+ " + name,
-                [&active, &classes, &canvas, &window, &spawnCount, &recordUndo, name]() {
-                    const NodeClass* cls = classes.Find(name);
-                    if (cls == nullptr) {
-                        return;
-                    }
-                    const render::Vec2 center = canvas.ScreenToCanvas(render::Vec2{
-                        static_cast<float>(window.GetWidth()) * 0.5f,
-                        static_cast<float>(window.GetHeight()) * 0.5f});
-                    const float offset = static_cast<float>(spawnCount % 8) * 24.0f;
-                    recordUndo();
-                    active->AddNode(*cls, center.x + offset, center.y + offset);
-                    ++spawnCount;
-                }));
+            bool known = false;
+            for (const std::string& cat : categories) {
+                if (cat == cls.category) {
+                    known = true;
+                    break;
+                }
+            }
+            if (!known) {
+                categories.push_back(cls.category);
+            }
         }
-        ui::Widget* raw = panel.get();
-        raw->Add(std::move(column));
-        const ui::Size s = raw->Measure(painter, ui::Size{240.0f, 400.0f});
-        raw->Arrange(ui::Rect{initW - s.w - 16.0f, 8.0f, s.w + 8.0f, s.h + 8.0f});
-        return panel;
+        for (const std::string& cat : categories) {
+            spawnMenu.items.push_back(PopupMenu::Item{cat, true, ""});
+            for (const NodeClass& cls : classes.All()) {
+                if (cls.category == cat && !isMarshallingClass(cls.name)) {
+                    spawnMenu.items.push_back(PopupMenu::Item{cls.name, false, cls.name});
+                }
+            }
+        }
+        const float w = static_cast<float>(window.GetWidth());
+        const float h = static_cast<float>(window.GetHeight());
+        spawnMenu.x = (sx + PopupMenu::WIDTH > w) ? w - PopupMenu::WIDTH - 4.0f : sx;
+        spawnMenu.y = (sy + spawnMenu.Height() > h) ? h - spawnMenu.Height() - 4.0f : sy;
     };
-    const std::size_t paletteIndex = panels.size();
-    panels.push_back(buildPalette());
-    rebuildPalette = [&panels, &buildPalette, paletteIndex]() {
-        panels[paletteIndex] = buildPalette();
+    const auto openActionMenu = [&](float sx, float sy, NodeId nodeId) {
+        actionMenu = PopupMenu{};
+        actionMenu.open = true;
+        actionTarget = nodeId;
+        const char* actions[6] = {"Edit Fn", "Collapse", "Expand",
+                                  "Align L", "Align T", "Distribute H"};
+        for (const char* action : actions) {
+            actionMenu.items.push_back(PopupMenu::Item{action, false, action});
+        }
+        const float w = static_cast<float>(window.GetWidth());
+        const float h = static_cast<float>(window.GetHeight());
+        actionMenu.x = (sx + PopupMenu::WIDTH > w) ? w - PopupMenu::WIDTH - 4.0f : sx;
+        actionMenu.y = (sy + actionMenu.Height() > h) ? h - actionMenu.Height() - 4.0f : sy;
     };
 
     // Selection info panel (bottom-left), text updated each frame.
@@ -742,10 +847,12 @@ int main()
         panels.push_back(std::move(panel));
     }
 
-    // Variable panel (top-left, under Run): name field + Add makes a variable
-    // of the selected type and registers its Get/Set nodes. Type cycles the
-    // scalar type used for both variables and function parameters.
+    // Variable panel (top-left, toggled by the Vars toolbar button): name
+    // field + Add makes a variable of the selected type and registers its
+    // Get/Set nodes. Type cycles the scalar type used for both variables
+    // and function parameters.
     ui::Label* typeLabel = nullptr;
+    const std::size_t varPanelIndex = panels.size();
     {
         auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
         auto row = std::make_unique<ui::Row>(6.0f);
@@ -788,10 +895,12 @@ int main()
         panels.push_back(std::move(panel));
     }
 
-    // Type editor panel (top-left, under Var): define struct/enum user types
-    // in-app (SRS 2.1 authoring, FR-TYP-6). Add Member accumulates a field of
-    // the selected type; Make Struct/Make Enum registers the type (and, for a
-    // struct, its Make/Break nodes) and clears the pending fields.
+    // Type editor panel (toggled by the Types toolbar button): define
+    // struct/enum user types in-app (SRS 2.1 authoring, FR-TYP-6). Add
+    // Member accumulates a field of the selected type; Make Struct/Make
+    // Enum registers the type (and, for a struct, its Make/Break nodes)
+    // and clears the pending fields.
+    const std::size_t typePanelIndex = panels.size();
     ui::Label* fieldsLabel = nullptr;
     {
         auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
@@ -914,9 +1023,10 @@ int main()
     // class (export name = class name) and it lands in the palette. The
     // module itself comes from wasm/*.wasm; Reload Wasm re-scans that
     // directory so an externally rebuilt module is picked up without a
-    // restart (FR-WASM-1).
+    // restart (FR-WASM-1). Toggled by the Wasm toolbar button.
     std::vector<PinDef> pendingPins;
     ui::Label* pinsLabel = nullptr;
+    const std::size_t wasmPanelIndex = panels.size();
     {
         auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
         auto column = std::make_unique<ui::Column>(4.0f);
@@ -985,6 +1095,11 @@ int main()
         panels.push_back(std::move(panel));
     }
 
+    // Per-panel visibility, refreshed every frame: the authoring panels
+    // follow their toolbar toggles and the function panel shows only
+    // while a function body is being edited.
+    std::vector<char> panelShown(panels.size(), 1);
+
     // Save/load the whole project. Load resets the registries in place (so
     // references stay valid), re-imports, then rebinds behaviors and rebuilds
     // dependent UI.
@@ -1020,6 +1135,9 @@ int main()
 
     std::vector<EditorInputEvent> events;
     bool panning = false;
+    // Set once the right button moves while held; suppresses the
+    // right-click menus after a pan.
+    bool rightDragged = false;
     bool dragRecorded = false;
     float lastX = 0.0f;
     float lastY = 0.0f;
@@ -1086,11 +1204,90 @@ int main()
         // Layout from current node positions; hit testing reads it.
         const render::GraphLayout layout = render::ComputeGraphLayout(graph, classes, measure);
 
+        panelShown[varPanelIndex] = showVars ? 1 : 0;
+        panelShown[typePanelIndex] = showTypes ? 1 : 0;
+        panelShown[wasmPanelIndex] = showWasm ? 1 : 0;
+        panelShown[fnPanelIndex] = (editingDef != nullptr) ? 1 : 0;
+
         for (const EditorInputEvent& e : events) {
+            // An open popup menu is modal: it consumes every event.
+            if (spawnMenu.open || actionMenu.open) {
+                PopupMenu& menu = spawnMenu.open ? spawnMenu : actionMenu;
+                if (e.type == EditorInputType::MouseMove) {
+                    menu.hover = menu.IndexAt(e.x, e.y);
+                } else if (e.type == EditorInputType::MouseWheel) {
+                    menu.ScrollBy(e.wheelDelta);
+                } else if (e.type == EditorInputType::MouseDown
+                           && e.button == EditorMouseButton::Left) {
+                    const int index = menu.IndexAt(e.x, e.y);
+                    std::string picked;
+                    if (index >= 0 && !menu.items[static_cast<std::size_t>(index)].header) {
+                        picked = menu.items[static_cast<std::size_t>(index)].tag;
+                    }
+                    const bool wasSpawn = spawnMenu.open;
+                    spawnMenu.open = false;
+                    actionMenu.open = false;
+                    if (picked.empty()) {
+                        // Clicked outside or on a header: just close.
+                    } else if (wasSpawn) {
+                        const NodeClass* cls = classes.Find(picked);
+                        if (cls != nullptr) {
+                            recordUndo();
+                            graph.AddNode(*cls, menu.canvasX, menu.canvasY);
+                        }
+                    } else if (picked == "Edit Fn") {
+                        const Node* n = graph.FindNode(actionTarget);
+                        FunctionDef* def =
+                            (n != nullptr) ? functions.Find(n->className) : nullptr;
+                        if (def != nullptr) {
+                            active = def->body.get();
+                            editingDef = def;
+                            editContext = def->name;
+                            fsm.ClearSelection();
+                        }
+                    } else if (picked == "Collapse") {
+                        std::vector<NodeId> ids = fsm.Selection();
+                        bool targetSelected = false;
+                        for (NodeId id : ids) {
+                            if (id == actionTarget) {
+                                targetSelected = true;
+                            }
+                        }
+                        if (!targetSelected) {
+                            ids.assign(1, actionTarget);
+                        }
+                        const std::string name = "Func" + std::to_string(++funcCount);
+                        recordUndo();
+                        if (CollapseSelection(graph, types, classes, builtins, functions, ids,
+                                              name)
+                            != INVALID_ID) {
+                            fsm.ClearSelection();
+                        }
+                    } else if (picked == "Expand") {
+                        recordUndo();
+                        if (ExpandCall(graph, types, classes, functions, actionTarget)) {
+                            fsm.ClearSelection();
+                        }
+                    } else if (picked == "Align L") {
+                        applyAlign(false, AlignMode::Left, false);
+                    } else if (picked == "Align T") {
+                        applyAlign(false, AlignMode::Top, false);
+                    } else if (picked == "Distribute H") {
+                        applyAlign(true, AlignMode::Left, true);
+                    }
+                } else if (e.type == EditorInputType::MouseDown
+                           || (e.type == EditorInputType::KeyDown
+                               && e.key == EditorKey::Escape)) {
+                    spawnMenu.open = false;
+                    actionMenu.open = false;
+                }
+                continue;
+            }
+
             const ui::Event ue = Translate(e);
             bool uiHandled = false;
-            for (const std::unique_ptr<ui::Widget>& p : panels) {
-                if (p->OnEvent(ue)) {
+            for (std::size_t i = 0; i < panels.size(); ++i) {
+                if (panelShown[i] != 0 && panels[i]->OnEvent(ue)) {
                     uiHandled = true;
                     break;
                 }
@@ -1175,13 +1372,27 @@ int main()
             } else if (e.type == EditorInputType::MouseDown
                        && e.button == EditorMouseButton::Right) {
                 panning = true;
+                rightDragged = false;
                 lastX = e.x;
                 lastY = e.y;
             } else if (e.type == EditorInputType::MouseUp
                        && e.button == EditorMouseButton::Right) {
                 panning = false;
+                // A right click that never dragged opens a menu (v1 UX):
+                // the node action menu over a node, else the spawn menu.
+                if (!rightDragged) {
+                    const NodeId hit = HitTestNode(layout, cp.x, cp.y);
+                    if (hit != INVALID_ID) {
+                        openActionMenu(e.x, e.y, hit);
+                    } else {
+                        openSpawnMenu(e.x, e.y);
+                    }
+                }
             } else if (e.type == EditorInputType::MouseMove) {
                 if (panning) {
+                    if (std::fabs(e.x - lastX) + std::fabs(e.y - lastY) > 3.0f) {
+                        rightDragged = true;
+                    }
                     canvas.PanByScreenDelta(e.x - lastX, e.y - lastY);
                     lastX = e.x;
                     lastY = e.y;
@@ -1294,9 +1505,13 @@ int main()
             render::DrawNodeOutline(vg, canvas, layout, debug->CurrentNode(), 60, 220, 90, 3.0f);
         }
         DrawMinimap(vg, canvas, layout, screenW, screenH);
-        for (const std::unique_ptr<ui::Widget>& p : panels) {
-            p->Paint(painter);
+        for (std::size_t i = 0; i < panels.size(); ++i) {
+            if (panelShown[i] != 0) {
+                panels[i]->Paint(painter);
+            }
         }
+        DrawPopupMenu(vg, spawnMenu);
+        DrawPopupMenu(vg, actionMenu);
         nvgEndFrame(vg);
         window.EndFrame();
     }
