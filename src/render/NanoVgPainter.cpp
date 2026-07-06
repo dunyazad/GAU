@@ -40,11 +40,23 @@ void NanoVgPainter::Text(float x, float y, const std::string& text, gau::ui::Col
 
 float NanoVgPainter::MeasureText(const std::string& text, float size)
 {
+    // Key by size + text; sizes are few and never collide with text
+    // content thanks to the separator.
+    std::string key = std::to_string(size);
+    key += '|';
+    key += text;
+    const auto cached = measureCache.find(key);
+    if (cached != measureCache.end()) {
+        return cached->second;
+    }
+
     nvgFontFace(vg, font);
     nvgFontSize(vg, size);
     float bounds[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     nvgTextBounds(vg, 0.0f, 0.0f, text.c_str(), nullptr, bounds);
-    return bounds[2] - bounds[0];
+    const float width = bounds[2] - bounds[0];
+    measureCache.emplace(std::move(key), width);
+    return width;
 }
 
 } // namespace gau::render

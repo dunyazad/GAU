@@ -6,6 +6,9 @@
 
 #include "ui/Painter.h"
 
+#include <string>
+#include <unordered_map>
+
 struct NVGcontext;
 
 namespace gau::render {
@@ -24,6 +27,10 @@ public:
 private:
     NVGcontext* vg;
     const char* font;
+    // Text measurement memo: the graph layout re-measures every label
+    // every frame (NFR-1), and widths never change for a given
+    // text/size pair within one font.
+    std::unordered_map<std::string, float> measureCache;
 };
 
 } // namespace gau::render

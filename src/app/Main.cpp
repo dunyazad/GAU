@@ -1577,6 +1577,12 @@ int main()
         }
     }
 
+    // Frame-time tracking (NFR-1): exponential average shown on the info
+    // label and printed periodically.
+    auto lastFrameTime = std::chrono::steady_clock::now();
+    float frameMsAvg = 0.0f;
+    int frameCount = 0;
+
     std::vector<EditorInputEvent> events;
     bool panning = false;
     // Set once the right button moves while held; suppresses the
@@ -2058,15 +2064,32 @@ int main()
             pinsLabel->SetText("pins: " + std::to_string(pendingPins.size()));
         }
 
+        {
+            const auto frameNow = std::chrono::steady_clock::now();
+            const float dtMs = std::chrono::duration<float, std::milli>(
+                                   frameNow - lastFrameTime)
+                                   .count();
+            lastFrameTime = frameNow;
+            frameMsAvg = (frameMsAvg <= 0.0f) ? dtMs : frameMsAvg * 0.95f + dtMs * 0.05f;
+            if (++frameCount % 600 == 0) {
+                std::printf("[perf] frame avg %.2f ms (%d nodes, %d links)\n", frameMsAvg,
+                            static_cast<int>(graph.Nodes().size()),
+                            static_cast<int>(graph.Links().size()));
+            }
+        }
+
         if (infoLabel != nullptr) {
             const std::vector<NodeId>& sel = fsm.Selection();
             const std::string ctx = "[" + editContext + "] ";
+            char perf[32];
+            std::snprintf(perf, sizeof(perf), " | %.1f ms", frameMsAvg);
             if (sel.empty()) {
-                infoLabel->SetText(ctx + "No selection");
+                infoLabel->SetText(ctx + "No selection" + perf);
             } else {
                 const Node* first = graph.FindNode(sel[0]);
                 const std::string name = (first != nullptr) ? first->className : "";
-                infoLabel->SetText(ctx + "Selected " + std::to_string(sel.size()) + ": " + name);
+                infoLabel->SetText(ctx + "Selected " + std::to_string(sel.size()) + ": " + name
+                                   + perf);
             }
         }
 
