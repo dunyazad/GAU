@@ -211,6 +211,12 @@ static void DrawMinimap(NVGcontext* vg, const render::Canvas& canvas,
     nvgStrokeWidth(vg, 1.0f);
     nvgStroke(vg);
 
+    // Everything inside the minimap clips to the panel: the viewport
+    // rectangle regularly extends past the content bounds when zoomed
+    // out and must not spill over the rest of the UI.
+    nvgSave(vg);
+    nvgIntersectScissor(vg, panel.x, panel.y, panel.w, panel.h);
+
     for (const NodeBox& b : boxes) {
         nvgBeginPath(vg);
         nvgRect(vg, fit.offsetX + b.x * fit.scale, fit.offsetY + b.y * fit.scale,
@@ -224,6 +230,8 @@ static void DrawMinimap(NVGcontext* vg, const render::Canvas& canvas,
     nvgStrokeColor(vg, nvgRGBA(255, 180, 40, 255));
     nvgStrokeWidth(vg, 1.5f);
     nvgStroke(vg);
+
+    nvgRestore(vg);
 }
 
 int main()
@@ -381,13 +389,19 @@ int main()
     // panel tracks it.
     CommentId selectedComment = INVALID_ID;
 
-    // Run panel (top-left).
+    // Left panels stack top-down with a running cursor so they never
+    // overlap regardless of font size or how many rows each one needs.
+    float leftY = 8.0f;
+
+    // Run panel (top-left): related buttons grouped one row per concern.
     {
         auto panel = std::make_unique<ui::Panel>(ui::Color{28, 28, 32, 235});
         auto column = std::make_unique<ui::Column>(4.0f);
-        column->Add(std::make_unique<ui::Button>("Run",
+
+        auto runRow = std::make_unique<ui::Row>(4.0f);
+        runRow->Add(std::make_unique<ui::Button>("Run",
                                                  [&runRequested]() { runRequested = true; }));
-        column->Add(std::make_unique<ui::Button>("Debug", [&]() {
+        runRow->Add(std::make_unique<ui::Button>("Debug", [&]() {
             debug = std::make_unique<Runtime>(*project.graph, types, classes, builtins, debugLog);
             for (NodeId bp : breakpoints) {
                 debug->AddBreakpoint(bp);
@@ -395,18 +409,21 @@ int main()
             debug->Start(entry);
             debug->Run(10000);
         }));
-        column->Add(std::make_unique<ui::Button>("Step", [&]() {
+        runRow->Add(std::make_unique<ui::Button>("Step", [&]() {
             if (debug) {
                 debug->Step();
             }
         }));
-        column->Add(std::make_unique<ui::Button>("Continue", [&]() {
+        runRow->Add(std::make_unique<ui::Button>("Continue", [&]() {
             if (debug) {
                 debug->Continue();
                 debug->Run(10000);
             }
         }));
-        column->Add(std::make_unique<ui::Button>("Collapse", [&]() {
+        column->Add(std::move(runRow));
+
+        auto graphRow = std::make_unique<ui::Row>(4.0f);
+        graphRow->Add(std::make_unique<ui::Button>("Collapse", [&]() {
             const std::vector<NodeId> sel = fsm.Selection();
             if (sel.empty()) {
                 return;
@@ -422,7 +439,7 @@ int main()
                 }
             }
         }));
-        column->Add(std::make_unique<ui::Button>("Expand", [&]() {
+        graphRow->Add(std::make_unique<ui::Button>("Expand", [&]() {
             const std::vector<NodeId>& sel = fsm.Selection();
             if (sel.empty()) {
                 return;
@@ -432,19 +449,35 @@ int main()
                 fsm.ClearSelection();
             }
         }));
-        column->Add(std::make_unique<ui::Button>(
+        graphRow->Add(std::make_unique<ui::Button>("Undo", [&]() {
+            if (undoActive()) {
+                fsm.ClearSelection();
+            }
+        }));
+        graphRow->Add(std::make_unique<ui::Button>("Redo", [&]() {
+            if (redoActive()) {
+                fsm.ClearSelection();
+            }
+        }));
+        column->Add(std::move(graphRow));
+
+        auto alignRow = std::make_unique<ui::Row>(4.0f);
+        alignRow->Add(std::make_unique<ui::Button>(
             "Align L", [&applyAlign]() { applyAlign(false, AlignMode::Left, false); }));
-        column->Add(std::make_unique<ui::Button>(
+        alignRow->Add(std::make_unique<ui::Button>(
             "Align T", [&applyAlign]() { applyAlign(false, AlignMode::Top, false); }));
-        column->Add(std::make_unique<ui::Button>(
+        alignRow->Add(std::make_unique<ui::Button>(
             "Distribute H", [&applyAlign]() { applyAlign(true, AlignMode::Left, true); }));
-        column->Add(std::make_unique<ui::Button>("Save", [&window]() {
+        column->Add(std::move(alignRow));
+
+        auto fileRow = std::make_unique<ui::Row>(4.0f);
+        fileRow->Add(std::make_unique<ui::Button>("Save", [&window]() {
             ShowGraphFileDialog(window.GetSDLWindow(), FileDialogType::SaveGraph);
         }));
-        column->Add(std::make_unique<ui::Button>("Load", [&window]() {
+        fileRow->Add(std::make_unique<ui::Button>("Load", [&window]() {
             ShowGraphFileDialog(window.GetSDLWindow(), FileDialogType::OpenGraph);
         }));
-        column->Add(std::make_unique<ui::Button>("Comment", [&]() {
+        fileRow->Add(std::make_unique<ui::Button>("Comment", [&]() {
             const render::Vec2 c = canvas.ScreenToCanvas(
                 render::Vec2{static_cast<float>(window.GetWidth()) * 0.5f,
                              static_cast<float>(window.GetHeight()) * 0.5f});
@@ -455,7 +488,7 @@ int main()
             cm.text = "Comment";
             project.comments.push_back(cm);
         }));
-        column->Add(std::make_unique<ui::Button>("Del Comment", [&]() {
+        fileRow->Add(std::make_unique<ui::Button>("Del Comment", [&]() {
             if (!project.comments.empty()) {
                 if (project.comments.back().id == selectedComment) {
                     selectedComment = INVALID_ID;
@@ -463,18 +496,12 @@ int main()
                 project.comments.pop_back();
             }
         }));
-        column->Add(std::make_unique<ui::Button>("Undo", [&]() {
-            if (undoActive()) {
-                fsm.ClearSelection();
-            }
-        }));
-        column->Add(std::make_unique<ui::Button>("Redo", [&]() {
-            if (redoActive()) {
-                fsm.ClearSelection();
-            }
-        }));
-        // Enter a selected Call node's function body; return to the main graph.
-        column->Add(std::make_unique<ui::Button>("Edit Fn", [&]() {
+        column->Add(std::move(fileRow));
+
+        // Function body editing: enter a selected Call node's body, return
+        // to the main graph, grow/shrink the interface.
+        auto fnRow = std::make_unique<ui::Row>(4.0f);
+        fnRow->Add(std::make_unique<ui::Button>("Edit Fn", [&]() {
             const std::vector<NodeId>& sel = fsm.Selection();
             if (sel.empty()) {
                 return;
@@ -489,44 +516,47 @@ int main()
             editContext = def->name;
             fsm.ClearSelection();
         }));
-        column->Add(std::make_unique<ui::Button>("Main", [&]() {
+        fnRow->Add(std::make_unique<ui::Button>("Main", [&]() {
             active = project.graph.get();
             editingDef = nullptr;
             editContext = "main";
             fsm.ClearSelection();
         }));
-        column->Add(std::make_unique<ui::Button>("Add In", [&]() {
+        fnRow->Add(std::make_unique<ui::Button>("Add In", [&]() {
             if (editingDef != nullptr) {
                 AddFunctionParam(*editingDef, false,
                                  "in" + std::to_string(editingDef->inputs.size() + 1),
                                  selTypeId, classes, builtins, types, project);
             }
         }));
-        column->Add(std::make_unique<ui::Button>("Add Out", [&]() {
+        fnRow->Add(std::make_unique<ui::Button>("Add Out", [&]() {
             if (editingDef != nullptr) {
                 AddFunctionParam(*editingDef, true,
                                  "out" + std::to_string(editingDef->outputs.size() + 1),
                                  selTypeId, classes, builtins, types, project);
             }
         }));
-        column->Add(std::make_unique<ui::Button>("Del In", [&]() {
+        fnRow->Add(std::make_unique<ui::Button>("Del In", [&]() {
             if (editingDef != nullptr && !editingDef->inputs.empty()) {
                 RemoveFunctionParam(*editingDef, false,
                                     static_cast<int>(editingDef->inputs.size()) - 1, classes,
                                     builtins, types, project);
             }
         }));
-        column->Add(std::make_unique<ui::Button>("Del Out", [&]() {
+        fnRow->Add(std::make_unique<ui::Button>("Del Out", [&]() {
             if (editingDef != nullptr && !editingDef->outputs.empty()) {
                 RemoveFunctionParam(*editingDef, true,
                                     static_cast<int>(editingDef->outputs.size()) - 1, classes,
                                     builtins, types, project);
             }
         }));
+        column->Add(std::move(fnRow));
+
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
-        const ui::Size s = raw->Measure(painter, ui::Size{200.0f, 200.0f});
-        raw->Arrange(ui::Rect{8.0f, 8.0f, s.w + 8.0f, s.h + 8.0f});
+        const ui::Size s = raw->Measure(painter, ui::Size{600.0f, 300.0f});
+        raw->Arrange(ui::Rect{8.0f, leftY, s.w + 8.0f, s.h + 8.0f});
+        leftY += s.h + 16.0f;
         panels.push_back(std::move(panel));
     }
 
@@ -753,7 +783,8 @@ int main()
         ui::Widget* raw = panel.get();
         raw->Add(std::move(row));
         const ui::Size s = raw->Measure(painter, ui::Size{360.0f, 40.0f});
-        raw->Arrange(ui::Rect{8.0f, 230.0f, s.w + 8.0f, s.h + 8.0f});
+        raw->Arrange(ui::Rect{8.0f, leftY, s.w + 8.0f, s.h + 8.0f});
+        leftY += s.h + 16.0f;
         panels.push_back(std::move(panel));
     }
 
@@ -872,7 +903,8 @@ int main()
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{360.0f, 120.0f});
-        raw->Arrange(ui::Rect{8.0f, 280.0f, s.w + 8.0f, s.h + 8.0f});
+        raw->Arrange(ui::Rect{8.0f, leftY, s.w + 8.0f, s.h + 8.0f});
+        leftY += s.h + 16.0f;
         panels.push_back(std::move(panel));
     }
 
@@ -948,7 +980,8 @@ int main()
         ui::Widget* raw = panel.get();
         raw->Add(std::move(column));
         const ui::Size s = raw->Measure(painter, ui::Size{360.0f, 100.0f});
-        raw->Arrange(ui::Rect{8.0f, 424.0f, s.w + 8.0f, s.h + 8.0f});
+        raw->Arrange(ui::Rect{8.0f, leftY, s.w + 8.0f, s.h + 8.0f});
+        leftY += s.h + 16.0f;
         panels.push_back(std::move(panel));
     }
 
