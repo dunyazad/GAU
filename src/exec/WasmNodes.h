@@ -19,4 +19,9 @@ NodeClass MakeWasmNodeClass(std::string name, std::string category, std::vector<
 void RegisterWasmNodeClass(NodeClassRegistry& classes, std::string name, std::string category,
                            std::vector<PinDef> pins);
 
+// Binds the class to an explicit wasm export (e.g. the generated
+// "<fn>__entry" bridge of a typed signature).
+void RegisterWasmNodeClass(NodeClassRegistry& classes, std::string name, std::string category,
+                           std::vector<PinDef> pins, std::string execFn);
+
 } // namespace gau

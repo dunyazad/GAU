@@ -62,6 +62,7 @@ add_library(gau_exec STATIC
     src/exec/VariableNodes.cpp
     src/exec/WasmHost.cpp
     src/exec/WasmNodes.cpp
+    src/exec/WasmAuthoring.cpp
 )
 target_include_directories(gau_exec PUBLIC src)
 target_link_libraries(gau_exec PUBLIC gau_model gau_core wasm3)
@@ -123,11 +124,16 @@ endif()
 # --- gau (the editor: v2 stack on the shared platform layer) ---
 add_executable(gau
     src/app/Main.cpp
+    src/app/WasmBuild.cpp
     src/platform/GLLoader.cpp
     src/platform/PlatformWindow.cpp
     src/platform/PlatformNVG.cpp
     src/platform/PlatformInput.cpp
     src/platform/PlatformFileDialog.cpp
+    src/platform/PlatformProcess.cpp
+    src/platform/PlatformClipboard.cpp
+    src/interaction/FunctionEditorDialog.cpp
+    src/render/FunctionEditorRenderer.cpp
 )
 target_include_directories(gau PRIVATE src external)
 target_link_libraries(gau PRIVATE SDL3::SDL3-static nanovg gau_render gau_exec gau_interaction gau_io)
@@ -235,6 +241,11 @@ add_executable(project_file_tests tests/ProjectFileTests.cpp)
 target_include_directories(project_file_tests PRIVATE src external)
 target_link_libraries(project_file_tests PRIVATE gau_exec gau_io)
 add_test(NAME project_file_tests COMMAND project_file_tests)
+
+add_executable(wasm_authoring_tests tests/WasmAuthoringTests.cpp)
+target_include_directories(wasm_authoring_tests PRIVATE src)
+target_link_libraries(wasm_authoring_tests PRIVATE gau_exec)
+add_test(NAME wasm_authoring_tests COMMAND wasm_authoring_tests)
 
 add_executable(wasm_nodes_tests tests/WasmNodesTests.cpp)
 target_include_directories(wasm_nodes_tests PRIVATE src external)

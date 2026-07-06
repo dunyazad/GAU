@@ -3,9 +3,14 @@
 // a Run button that executes the graph through the v2 runtime. Assembly
 // grows into Application/Document/InputRouter in later slices.
 
+#include "platform/PlatformClipboard.h"
 #include "platform/PlatformFileDialog.h"
 #include "platform/PlatformNVG.h"
 #include "platform/PlatformWindow.h"
+
+#include "WasmBuild.h"
+#include "interaction/FunctionEditorDialog.h"
+#include "render/FunctionEditorRenderer.h"
 
 #include "core/TypeRegistry.h"
 #include "exec/Builtins.h"
@@ -480,6 +485,11 @@ int main()
         return 1;
     }
     render::NanoVgPainter painter(vg, "sans");
+
+    // Wasm function editor (shared with the legacy app): source in, node
+    // class out via the WasmBuild pipeline.
+    FunctionEditorDialog functionEditor;
+    functionEditor.SetCharWidth(MeasureMonoCharWidth(vg, 12.0f * UI_SCALE));
 
     // The editable project (types, classes, functions, variables, comments,
     // graph) is one save/load unit; references keep the rest of the code
@@ -1255,6 +1265,20 @@ int main()
             }
             std::printf("wasm: reloaded %d module(s)\n", n);
         }));
+        // Opens the function editor, continuing from the on-disk source
+        // of the current function name when it exists.
+        makeRow->Add(std::make_unique<ui::Button>("Edit Function", [&]() {
+            functionEditor.Open(static_cast<float>(window.GetWidth()),
+                                static_cast<float>(window.GetHeight()));
+            const std::string sourcePath =
+                std::string("wasm_src/") + functionEditor.GetFunctionName() + ".cpp";
+            std::ifstream file(sourcePath, std::ios::binary);
+            if (file.is_open()) {
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+                functionEditor.SetContent(functionEditor.GetFunctionName(), buffer.str());
+            }
+        }));
         column->Add(std::move(makeRow));
 
         ui::Widget* raw = panel.get();
@@ -1398,6 +1422,42 @@ int main()
         panelShown[fnPanelIndex] = (editingDef != nullptr) ? 1 : 0;
 
         for (const EditorInputEvent& e : events) {
+            // The function editor is modal and outranks everything.
+            if (functionEditor.IsOpen()) {
+                // Clipboard keys bridge to the OS clipboard here (the
+                // dialog itself owns only caret/selection state).
+                if (e.type == EditorInputType::KeyDown) {
+                    if (e.key == EditorKey::Copy || e.key == EditorKey::Cut) {
+                        const std::string selected = functionEditor.GetSelectedText();
+                        if (!selected.empty()) {
+                            SetClipboardText(selected);
+                            if (e.key == EditorKey::Cut) {
+                                functionEditor.DeleteSelectedText();
+                            }
+                        }
+                        continue;
+                    }
+                    if (e.key == EditorKey::Paste) {
+                        functionEditor.InsertAtCaret(GetClipboardText());
+                        continue;
+                    }
+                }
+                const FunctionEditorAction action = functionEditor.HandleEvent(e);
+                if (action.type == FunctionEditorAction::Type::Build) {
+                    const WasmBuildOutcome outcome =
+                        BuildWasmFunction(action.name, action.source, types, classes);
+                    for (const std::string& line : outcome.log) {
+                        std::printf("[wasm] %s\n", line.c_str());
+                    }
+                    if (outcome.ok) {
+                        functionEditor.Close();
+                    } else {
+                        functionEditor.SetStatus(outcome.status);
+                    }
+                }
+                continue;
+            }
+
             // An open popup menu is modal: it consumes every event.
             if (spawnMenu.open || actionMenu.open) {
                 PopupMenu& menu = spawnMenu.open ? spawnMenu : actionMenu;
@@ -1709,6 +1769,7 @@ int main()
         }
         DrawPopupMenu(vg, spawnMenu);
         DrawPopupMenu(vg, actionMenu);
+        DrawFunctionEditorDialog(vg, functionEditor, screenW, screenH);
         nvgEndFrame(vg);
         window.EndFrame();
     }
