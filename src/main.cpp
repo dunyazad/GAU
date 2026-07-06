@@ -28,6 +28,7 @@
 #include "exec/ExecEngine.h"
 #include "exec/WasmApiHeader.h"
 #include "exec/WasmRuntime.h"
+#include "exec/WasmSignature.h"
 #include "interaction/ActionMenu.h"
 #include "interaction/HitTest.h"
 #include "interaction/NodeAlign.h"
@@ -1175,14 +1176,15 @@ static bool ParseWasmNodeDirectives(const std::string& source, std::vector<PinDe
     return anyPins;
 }
 
-// Creates or updates the node class driven by a wasm function's
-// directives and persists it to custom_nodes.json.
+// Creates or updates a wasm-bound node class and persists it to
+// custom_nodes.json. The execFn names the wasm export to run: the
+// function itself on the directive path, or the generated ABI entry on
+// the typed-signature path.
 static void RegisterWasmNodeClass(const std::string& name, const std::string& category,
-                                  std::vector<PinDef> pins,
+                                  std::vector<PinDef> pins, const std::string& execFn,
                                   std::vector<std::unique_ptr<Document>>& documents,
                                   std::vector<std::string>& logLines)
 {
-    const std::string execFn = "wasm:" + name;
     const NodeClass* existing = NodeClass::FindByName(name.c_str());
     std::string error;
 
@@ -1252,14 +1254,48 @@ static void BuildWasmFunction(const FunctionEditorAction& action,
         file << action.source;
     }
 
+    // Typed-signature path (preferred): an extern "C" definition with real
+    // parameter/return types gets its pins derived from the signature and a
+    // generated companion entry that bridges the index-based host ABI. The
+    // directive path (@in/@out + void(void)) remains for exec-pin nodes.
+    WasmSignature signature;
+    std::string signatureError;
+    const WasmSignatureScan scan =
+        ScanWasmSignature(action.source, action.name, signature, signatureError);
+    if (scan == WasmSignatureScan::Unsupported) {
+        logLines.push_back("wasm: " + signatureError);
+        functionEditor.SetStatus("Unsupported signature (see Output panel)");
+        return;
+    }
+
+    std::vector<PinDef> signaturePins;
+    std::string entryPath;
+    if (scan == WasmSignatureScan::Found) {
+        if (!BuildPinsFromWasmSignature(signature, signaturePins, signatureError)) {
+            logLines.push_back("wasm: " + signatureError);
+            functionEditor.SetStatus("Unsupported signature (see Output panel)");
+            return;
+        }
+        entryPath = std::string(WASM_SOURCE_DIR) + "/" + action.name + ".entry.cpp";
+        std::ofstream entryFile(entryPath, std::ios::binary);
+        if (!entryFile.is_open()) {
+            functionEditor.SetStatus("Cannot write " + entryPath);
+            return;
+        }
+        entryFile << GenerateWasmEntrySource(signature);
+    }
+
     // Sources build as freestanding C++ (no exceptions/RTTI); exported
     // entry points must be extern "C" so their names stay unmangled.
     const std::string wasmPath = std::string(WASM_MODULE_DIR) + "/" + action.name + ".wasm";
     const std::string clang = FindClangForWasm(settings);
-    const std::string command = "\"" + clang + "\" --target=wasm32 -nostdlib -O2"
-                              + " -std=c++17 -fno-exceptions -fno-rtti"
-                              + " -Wl,--no-entry -Wl,--export-all -Wl,--allow-undefined"
-                              + " -o \"" + wasmPath + "\" \"" + sourcePath + "\"";
+    std::string command = "\"" + clang + "\" --target=wasm32 -nostdlib -O2"
+                        + " -std=c++17 -fno-exceptions -fno-rtti"
+                        + " -Wl,--no-entry -Wl,--export-all -Wl,--allow-undefined"
+                        + " -o \"" + wasmPath + "\" \"" + sourcePath + "\"";
+    if (!entryPath.empty()) {
+        command += " \"" + entryPath + "\"";
+    }
 
     logLines.push_back("--- wasm build: " + action.name + " ---");
     std::string output;
@@ -1310,11 +1346,19 @@ static void BuildWasmFunction(const FunctionEditorAction& action,
 
     LoadWasmModules();
 
+    if (scan == WasmSignatureScan::Found) {
+        RegisterWasmNodeClass(signature.functionName, "Pure", std::move(signaturePins),
+                              "wasm:" + WasmEntryExportName(signature.functionName),
+                              documents, logLines);
+        functionEditor.Close();
+        return;
+    }
+
     std::vector<PinDef> directivePins;
     std::string directiveCategory;
     if (ParseWasmNodeDirectives(action.source, directivePins, directiveCategory)) {
         RegisterWasmNodeClass(action.name, directiveCategory, std::move(directivePins),
-                              documents, logLines);
+                              "wasm:" + action.name, documents, logLines);
     } else {
         logLines.push_back("wasm build ok: no @in/@out directives; bind manually with"
                            " \"execFn\": \"wasm:" + action.name + "\"");

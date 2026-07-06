@@ -13,3 +13,6 @@ editor_settings.json
 # Bundled wasm toolchain (clang/wasm-ld) shipped with the app, not in git
 # (too large; staged by the packaging step). See docs/WASM_BUNDLING.md.
 /tools/
+
+# Generated ABI bridge sources for typed wasm functions (rebuilt on every build)
+wasm_src/*.entry.cpp

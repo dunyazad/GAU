@@ -4,20 +4,19 @@ static const std::size_t MAX_SOURCE_LENGTH = 65536;
 static const std::size_t MAX_NAME_LENGTH = 48;
 
 static const char* DEFAULT_SOURCE =
-    "// GAU wasm node function (C++, no exceptions/RTTI, no stdlib).\n"
-    "// The directives below define the node class (created/updated on\n"
-    "// build). Pin tokens are name:type; use _ for unnamed exec pins.\n"
-    "// @node category=Function\n"
-    "// @in a:int b:int\n"
-    "// @out result:int\n"
-    "\n"
-    "// gau_api.h is generated from the node classes: host imports plus\n"
-    "// structs and gau_read_/gau_write_ helpers for data classes.\n"
+    "// GAU wasm node function (C++, no exceptions/RTTI, no stdlib --\n"
+    "// standard headers like <iostream> are unavailable).\n"
+    "// Write a typed extern \"C\" function: the node's pins derive from\n"
+    "// the signature. Usable types: int, long, float, double, bool,\n"
+    "// String, and data classes from gau_api.h (e.g. Vector3f, one pin\n"
+    "// per field). String supports + concatenation, ftoa(f), itoa(i).\n"
+    "// (Exec-pin nodes instead use a void(void) function with\n"
+    "// // @node/@in/@out directives and gau_input_*/gau_output_*.)\n"
     "#include \"gau_api.h\"\n"
     "\n"
-    "extern \"C\" void my_function(void)\n"
+    "extern \"C\" int my_function(int a, int b)\n"
     "{\n"
-    "    gau_output_i32(0, gau_input_i32(0) + gau_input_i32(1));\n"
+    "    return a + b;\n"
     "}\n";
 
 void FunctionEditorDialog::Open(float screenWidth, float screenHeight)

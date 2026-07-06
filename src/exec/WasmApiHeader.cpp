@@ -43,7 +43,7 @@ static const char* FieldCType(PinType type)
 
 // True for classes that read as plain data records: identifier name and
 // one or more scalar numeric/bool properties with identifier names.
-static bool IsDataCarrierClass(const NodeClass& nodeClass)
+bool IsWasmDataCarrierClass(const NodeClass& nodeClass)
 {
     if (!IsCIdentifier(nodeClass.GetName())) {
         return false;
@@ -242,10 +242,52 @@ bool WriteWasmApiHeader(const std::string& path, std::string& outError)
             "inline void gau_log(const GauStr& s)\n"
             "{\n"
             "    gau_log(s.data, s.len);\n"
+            "}\n"
+            "\n"
+            "// String is the value type for typed function signatures: build\n"
+            "// one by concatenation and return it, e.g.\n"
+            "//   extern \"C\" String Format(const Vector3f& v)\n"
+            "//   { return ftoa(v.x) + \", \" + ftoa(v.y) + \", \" + ftoa(v.z); }\n"
+            "typedef GauStr String;\n"
+            "\n"
+            "inline GauStr operator+(GauStr a, const GauStr& b)\n"
+            "{\n"
+            "    for (int i = 0; i < b.len; ++i) {\n"
+            "        gau_append(a, b.data[i]);\n"
+            "    }\n"
+            "    return a;\n"
+            "}\n"
+            "\n"
+            "inline GauStr operator+(GauStr a, const char* b)\n"
+            "{\n"
+            "    gau_append(a, b);\n"
+            "    return a;\n"
+            "}\n"
+            "\n"
+            "inline GauStr operator+(const char* a, const GauStr& b)\n"
+            "{\n"
+            "    GauStr s = gau_str(a);\n"
+            "    return s + b;\n"
+            "}\n"
+            "\n"
+            "// Decimal text of a float value (default two fraction digits).\n"
+            "inline GauStr ftoa(double value, int decimals = 2)\n"
+            "{\n"
+            "    GauStr s = gau_str();\n"
+            "    gau_append(s, value, decimals);\n"
+            "    return s;\n"
+            "}\n"
+            "\n"
+            "// Decimal text of an integer value.\n"
+            "inline GauStr itoa(long value)\n"
+            "{\n"
+            "    GauStr s = gau_str();\n"
+            "    gau_append(s, value);\n"
+            "    return s;\n"
             "}\n";
 
     for (const NodeClass* nodeClass : NodeClass::GetRegistry()) {
-        if (!IsDataCarrierClass(*nodeClass)) {
+        if (!IsWasmDataCarrierClass(*nodeClass)) {
             continue;
         }
         const std::vector<PropertyDef>& properties = nodeClass->GetProperties();

@@ -134,6 +134,48 @@ inline void gau_log(const GauStr& s)
     gau_log(s.data, s.len);
 }
 
+// String is the value type for typed function signatures: build
+// one by concatenation and return it, e.g.
+//   extern "C" String Format(const Vector3f& v)
+//   { return ftoa(v.x) + ", " + ftoa(v.y) + ", " + ftoa(v.z); }
+typedef GauStr String;
+
+inline GauStr operator+(GauStr a, const GauStr& b)
+{
+    for (int i = 0; i < b.len; ++i) {
+        gau_append(a, b.data[i]);
+    }
+    return a;
+}
+
+inline GauStr operator+(GauStr a, const char* b)
+{
+    gau_append(a, b);
+    return a;
+}
+
+inline GauStr operator+(const char* a, const GauStr& b)
+{
+    GauStr s = gau_str(a);
+    return s + b;
+}
+
+// Decimal text of a float value (default two fraction digits).
+inline GauStr ftoa(double value, int decimals = 2)
+{
+    GauStr s = gau_str();
+    gau_append(s, value, decimals);
+    return s;
+}
+
+// Decimal text of an integer value.
+inline GauStr itoa(long value)
+{
+    GauStr s = gau_str();
+    gau_append(s, value);
+    return s;
+}
+
 struct Vector3f
 {
     float x;

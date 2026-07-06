@@ -131,6 +131,7 @@ add_executable(gau
     src/exec/BuiltinNodes.cpp
     src/exec/WasmRuntime.cpp
     src/exec/WasmApiHeader.cpp
+    src/exec/WasmSignature.cpp
     src/interaction/ActionMenu.cpp
     src/interaction/ContextMenu.cpp
     src/interaction/FunctionEditorDialog.cpp
@@ -368,6 +369,19 @@ if(MSVC)
     target_compile_definitions(node_class_loader_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 add_test(NAME node_class_loader_tests COMMAND node_class_loader_tests)
+
+add_executable(wasm_signature_tests
+    tests/WasmSignatureTests.cpp
+    src/model/NodeClass.cpp
+    src/model/UserType.cpp
+    src/exec/WasmApiHeader.cpp
+    src/exec/WasmSignature.cpp
+)
+target_include_directories(wasm_signature_tests PRIVATE src)
+if(MSVC)
+    target_compile_definitions(wasm_signature_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME wasm_signature_tests COMMAND wasm_signature_tests)
 
 add_executable(exec_tests
     tests/ExecTests.cpp
