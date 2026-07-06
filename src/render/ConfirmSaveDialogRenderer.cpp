@@ -61,10 +61,8 @@ void DrawConfirmSaveDialog(NVGcontext* vg, const ConfirmSaveDialog& dialog, floa
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     nvgText(vg, panel.x + ConfirmSaveDialog::PADDING,
             panel.y + ConfirmSaveDialog::PADDING + ConfirmSaveDialog::TITLE_HEIGHT * 0.5f,
-            "Unsaved Changes", nullptr);
+            dialog.GetTitle().c_str(), nullptr);
 
-    const std::string message =
-        "Save changes to \"" + dialog.GetDocumentName() + "\" before closing?";
     nvgFontFace(vg, FONT_REGULAR);
     nvgFontSize(vg, MESSAGE_FONT_SIZE);
     nvgFillColor(vg, nvgRGB(200, 200, 208));
@@ -72,10 +70,12 @@ void DrawConfirmSaveDialog(NVGcontext* vg, const ConfirmSaveDialog& dialog, floa
     nvgTextBox(vg, panel.x + ConfirmSaveDialog::PADDING,
                panel.y + ConfirmSaveDialog::PADDING + ConfirmSaveDialog::TITLE_HEIGHT
                    + 6.0f * UI_SCALE,
-               panel.w - ConfirmSaveDialog::PADDING * 2.0f, message.c_str(), nullptr);
+               panel.w - ConfirmSaveDialog::PADDING * 2.0f, dialog.GetMessage().c_str(),
+               nullptr);
 
     const int hovered = dialog.GetHoveredButton();
-    DrawButton(vg, dialog.SaveButtonRect(), "Save", true, hovered == 0);
-    DrawButton(vg, dialog.DiscardButtonRect(), "Don't Save", false, hovered == 1);
+    DrawButton(vg, dialog.SaveButtonRect(), dialog.GetSaveLabel().c_str(), true, hovered == 0);
+    DrawButton(vg, dialog.DiscardButtonRect(), dialog.GetDiscardLabel().c_str(), false,
+               hovered == 1);
     DrawButton(vg, dialog.CancelButtonRect(), "Cancel", false, hovered == 2);
 }

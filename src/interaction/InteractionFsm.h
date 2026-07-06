@@ -41,6 +41,14 @@ public:
         state = State::Idle;
     }
 
+    // Replaces the selection programmatically (e.g. selecting the nodes
+    // a paste just created). Returns to Idle.
+    void SetSelection(std::vector<NodeId> ids)
+    {
+        selection = std::move(ids);
+        state = State::Idle;
+    }
+
     // Link-drag preview (for rendering the temporary wire).
     bool IsDraggingLink() const { return state == State::DraggingLink; }
     PinId DragLinkPin() const { return dragPin; }

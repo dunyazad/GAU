@@ -2,8 +2,23 @@
 
 void ConfirmSaveDialog::Open(const std::string& name, float screenWidth, float screenHeight)
 {
-    open = true;
+    OpenPrompt("Unsaved Changes", "Save changes to \"" + name + "\" before closing?", "Save",
+               "Don't Save", screenWidth, screenHeight);
     documentName = name;
+}
+
+void ConfirmSaveDialog::OpenPrompt(const std::string& promptTitle,
+                                   const std::string& promptMessage,
+                                   const std::string& promptSaveLabel,
+                                   const std::string& promptDiscardLabel, float screenWidth,
+                                   float screenHeight)
+{
+    open = true;
+    documentName.clear();
+    title = promptTitle;
+    message = promptMessage;
+    saveLabel = promptSaveLabel;
+    discardLabel = promptDiscardLabel;
     hoveredButton = -1;
     panelX = (screenWidth - WIDTH) * 0.5f;
     panelY = (screenHeight - HEIGHT) * 0.5f;

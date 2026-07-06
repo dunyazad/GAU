@@ -17,3 +17,4 @@ editor_settings.json
 # Generated ABI bridge sources for typed wasm functions (rebuilt on every build)
 wasm_src/*.entry.cpp
 gau_session.json
+.gau_autosave.json

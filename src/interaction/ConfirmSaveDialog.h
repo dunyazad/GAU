@@ -33,6 +33,12 @@ public:
     bool IsOpen() const { return open; }
 
     void Open(const std::string& name, float screenWidth, float screenHeight);
+    // Same three-button modal with custom texts (e.g. the autosave
+    // recovery prompt). Save/Discard/Cancel semantics stay with the
+    // caller; the labels are display-only.
+    void OpenPrompt(const std::string& promptTitle, const std::string& promptMessage,
+                    const std::string& saveLabel, const std::string& discardLabel,
+                    float screenWidth, float screenHeight);
     void Close();
 
     // Consumes all events while open. Returns the chosen action, or
@@ -40,6 +46,10 @@ public:
     ConfirmSaveAction HandleEvent(const EditorInputEvent& event);
 
     const std::string& GetDocumentName() const { return documentName; }
+    const std::string& GetTitle() const { return title; }
+    const std::string& GetMessage() const { return message; }
+    const std::string& GetSaveLabel() const { return saveLabel; }
+    const std::string& GetDiscardLabel() const { return discardLabel; }
     // 0 = Save, 1 = Don't Save, 2 = Cancel, -1 = none.
     int GetHoveredButton() const { return hoveredButton; }
 
@@ -53,6 +63,10 @@ private:
 
     bool open = false;
     std::string documentName;
+    std::string title;
+    std::string message;
+    std::string saveLabel;
+    std::string discardLabel;
     float panelX = 0.0f;
     float panelY = 0.0f;
     int hoveredButton = -1;

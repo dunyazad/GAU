@@ -49,6 +49,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -68,6 +69,11 @@ using namespace gau;
 // transform, panel toggles and the last opened project (reopened on
 // start). Lives next to the executable / working directory.
 static const char* SESSION_FILE = "gau_session.json";
+
+// Crash-recovery autosave (FR-PRJ-2): written periodically while dirty,
+// removed on a clean exit and on every manual save. Its presence at
+// startup means the previous session crashed.
+static const char* AUTOSAVE_FILE = ".gau_autosave.json";
 
 struct SessionState
 {
@@ -526,6 +532,15 @@ int main()
     ConfirmSaveDialog confirmSave;
     bool quitConfirmed = false;
     bool quitAfterSave = false;
+    // What the confirm dialog currently asks: quit-time save, or the
+    // startup autosave recovery offer.
+    enum class PromptKind
+    {
+        QuitSave,
+        Recover,
+    };
+    PromptKind promptKind = PromptKind::QuitSave;
+    std::string snapshotBeforeRecovery;
 
     // The editable project (types, classes, functions, variables, comments,
     // graph) is one save/load unit; references keep the rest of the code
@@ -1442,6 +1457,17 @@ int main()
                     toNode->inputs[static_cast<std::size_t>(link.toInput)].id);
             }
         }
+        // The pasted nodes become the selection, ready to be dragged.
+        std::vector<NodeId> pasted;
+        for (NodeId id : newIds) {
+            if (id != INVALID_ID) {
+                pasted.push_back(id);
+            }
+        }
+        if (!pasted.empty()) {
+            fsm.SetSelection(std::move(pasted));
+            shownNode = INVALID_ID;
+        }
     };
     const auto deleteNodes = [&](const std::vector<NodeId>& ids) {
         if (ids.empty()) {
@@ -1480,10 +1506,17 @@ int main()
     // Serialized form of the project at the last save/load; the quit
     // prompt compares against it to detect unsaved changes.
     std::string lastSavedSnapshot;
+    // Last autosaved form, to skip redundant autosave writes.
+    std::string lastAutosaveContent;
+    auto lastAutosaveTime = std::chrono::steady_clock::now();
     const auto saveProject = [&](const std::string& path) {
         SaveProjectFile(path, project);
         currentProjectPath = path;
         lastSavedSnapshot = ExportProject(project);
+        // A fresh manual save supersedes any autosave.
+        std::error_code removeEc;
+        std::filesystem::remove(AUTOSAVE_FILE, removeEc);
+        lastAutosaveContent.clear();
     };
     const auto loadProject = [&](const std::string& path) {
         types.Clear();
@@ -1529,12 +1562,31 @@ int main()
     }
     lastSavedSnapshot = ExportProject(project);
 
+    // An autosave file left behind means the previous session did not
+    // exit cleanly: offer to restore it (FR-PRJ-2).
+    {
+        std::ifstream probe(AUTOSAVE_FILE, std::ios::binary);
+        if (probe.is_open()) {
+            probe.close();
+            promptKind = PromptKind::Recover;
+            snapshotBeforeRecovery = lastSavedSnapshot;
+            confirmSave.OpenPrompt("Recover Autosave",
+                                   "An autosave from a previous session exists. Restore it?",
+                                   "Restore", "Discard", static_cast<float>(window.GetWidth()),
+                                   static_cast<float>(window.GetHeight()));
+        }
+    }
+
     std::vector<EditorInputEvent> events;
     bool panning = false;
     // Set once the right button moves while held; suppresses the
     // right-click menus after a pan.
     bool rightDragged = false;
     bool dragRecorded = false;
+    // Ctrl+left-drag cut line (M4 CuttingLinks): crossing links die on
+    // release.
+    bool cuttingLinks = false;
+    std::vector<CutPoint> cutPoints;
     float lastX = 0.0f;
     float lastY = 0.0f;
     // Comment drag: the box being moved and the nodes it carries with it.
@@ -1629,16 +1681,33 @@ int main()
         panelShown[fnPanelIndex] = (editingDef != nullptr) ? 1 : 0;
 
         for (const EditorInputEvent& e : events) {
-            // The quit confirm dialog outranks everything else.
+            // The confirm dialog outranks everything else.
             if (confirmSave.IsOpen()) {
                 const ConfirmSaveAction act = confirmSave.HandleEvent(e);
-                if (act == ConfirmSaveAction::Cancel) {
-                    confirmSave.Close();
-                } else if (act == ConfirmSaveAction::Discard) {
-                    confirmSave.Close();
+                if (act == ConfirmSaveAction::None) {
+                    continue;
+                }
+                confirmSave.Close();
+                if (promptKind == PromptKind::Recover) {
+                    if (act == ConfirmSaveAction::Save) {
+                        // Restore: load the autosave but keep the real
+                        // project path and its saved snapshot, so the
+                        // recovered state counts as unsaved changes.
+                        const std::string keepPath = currentProjectPath;
+                        loadProject(AUTOSAVE_FILE);
+                        currentProjectPath = keepPath;
+                        lastSavedSnapshot = snapshotBeforeRecovery;
+                    } else if (act == ConfirmSaveAction::Discard) {
+                        std::error_code removeEc;
+                        std::filesystem::remove(AUTOSAVE_FILE, removeEc);
+                    }
+                    // Cancel keeps the autosave file for the next start.
+                    promptKind = PromptKind::QuitSave;
+                    continue;
+                }
+                if (act == ConfirmSaveAction::Discard) {
                     quitConfirmed = true;
                 } else if (act == ConfirmSaveAction::Save) {
-                    confirmSave.Close();
                     if (!currentProjectPath.empty()) {
                         saveProject(currentProjectPath);
                         quitConfirmed = true;
@@ -1808,6 +1877,12 @@ int main()
                     }
                 }
             } else if (e.type == EditorInputType::MouseDown
+                       && e.button == EditorMouseButton::Left && e.ctrl) {
+                // Ctrl+drag starts a cut line.
+                cuttingLinks = true;
+                cutPoints.clear();
+                cutPoints.push_back(CutPoint{cp.x, cp.y});
+            } else if (e.type == EditorInputType::MouseDown
                        && e.button == EditorMouseButton::Left && e.alt) {
                 // Alt+click severs the link under the cursor (v1 UX).
                 const LinkId hitLink = HitTestLink(graph, layout, cp.x, cp.y, 8.0f);
@@ -1851,6 +1926,19 @@ int main()
                     fsm.OnMouseDown(cp.x, cp.y, graph, layout);
                 }
             } else if (e.type == EditorInputType::MouseUp && e.button == EditorMouseButton::Left) {
+                if (cuttingLinks) {
+                    cuttingLinks = false;
+                    const std::vector<LinkId> crossed =
+                        HitTestLinksCrossing(graph, layout, cutPoints);
+                    if (!crossed.empty()) {
+                        recordUndo();
+                        for (LinkId id : crossed) {
+                            graph.RemoveLink(id);
+                        }
+                    }
+                    cutPoints.clear();
+                    continue;
+                }
                 draggingComment = INVALID_ID;
                 // A link drag creates/replaces a link on release: checkpoint
                 // the graph just before it lands. If the pins can't connect
@@ -1885,7 +1973,12 @@ int main()
                     }
                 }
             } else if (e.type == EditorInputType::MouseMove) {
-                if (panning) {
+                if (cuttingLinks) {
+                    const CutPoint& last = cutPoints.back();
+                    if (std::fabs(cp.x - last.x) + std::fabs(cp.y - last.y) > 2.0f) {
+                        cutPoints.push_back(CutPoint{cp.x, cp.y});
+                    }
+                } else if (panning) {
                     if (std::fabs(e.x - lastX) + std::fabs(e.y - lastY) > 3.0f) {
                         rightDragged = true;
                     }
@@ -2008,6 +2101,20 @@ int main()
             render::DrawRubberBand(vg, canvas, fsm.BandX0(), fsm.BandY0(), fsm.BandX1(),
                                    fsm.BandY1());
         }
+        if (cuttingLinks && cutPoints.size() >= 2) {
+            nvgBeginPath(vg);
+            const render::Vec2 first =
+                canvas.CanvasToScreen(render::Vec2{cutPoints[0].x, cutPoints[0].y});
+            nvgMoveTo(vg, first.x, first.y);
+            for (std::size_t i = 1; i < cutPoints.size(); ++i) {
+                const render::Vec2 p =
+                    canvas.CanvasToScreen(render::Vec2{cutPoints[i].x, cutPoints[i].y});
+                nvgLineTo(vg, p.x, p.y);
+            }
+            nvgStrokeColor(vg, nvgRGBA(230, 70, 70, 220));
+            nvgStrokeWidth(vg, 2.0f);
+            nvgStroke(vg);
+        }
         for (NodeId bp : breakpoints) {
             render::DrawNodeOutline(vg, canvas, layout, bp, 220, 50, 50, 2.0f);
         }
@@ -2027,9 +2134,28 @@ int main()
         nvgEndFrame(vg);
         window.EndFrame();
 
+        // Periodic crash-recovery autosave: only when the project drifted
+        // from both the last save and the last autosave.
+        const auto now = std::chrono::steady_clock::now();
+        if (now - lastAutosaveTime > std::chrono::seconds(30)) {
+            lastAutosaveTime = now;
+            const std::string current = ExportProject(project);
+            if (current != lastSavedSnapshot && current != lastAutosaveContent) {
+                SaveProjectFile(AUTOSAVE_FILE, project);
+                lastAutosaveContent = current;
+            }
+        }
+
         if (quitConfirmed) {
             break;
         }
+    }
+
+    // A clean exit needs no recovery file -- unless the recovery offer
+    // was never answered, in which case it must survive for next start.
+    if (!(confirmSave.IsOpen() && promptKind == PromptKind::Recover)) {
+        std::error_code removeEc;
+        std::filesystem::remove(AUTOSAVE_FILE, removeEc);
     }
 
     session.windowW = window.GetWidth();

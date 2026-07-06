@@ -28,4 +28,15 @@ std::vector<NodeId> HitTestNodesInRect(const render::GraphLayout& layout, float 
 LinkId HitTestLink(const Graph& graph, const render::GraphLayout& layout, float canvasX,
                    float canvasY, float radius);
 
+// A cut-line point in canvas space.
+struct CutPoint
+{
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+// Links whose curve crosses the polyline (the Ctrl+drag cut line).
+std::vector<LinkId> HitTestLinksCrossing(const Graph& graph, const render::GraphLayout& layout,
+                                         const std::vector<CutPoint>& polyline);
+
 } // namespace gau
