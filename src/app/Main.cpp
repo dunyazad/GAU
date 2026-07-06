@@ -304,6 +304,32 @@ static void DrawGrid(NVGcontext* vg, const render::Canvas& canvas, float screenW
     drawLines(128.0f, nvgRGB(26, 26, 28));
 }
 
+// In-app node clipboard: class names, positions and property values of
+// the copied nodes plus the links between them. Link endpoints are
+// addressed by copied-node index and direction-local pin index so paste
+// can rewire the freshly spawned instances.
+struct CopiedNode
+{
+    std::string className;
+    float x = 0.0f;
+    float y = 0.0f;
+    std::vector<Value> properties;
+};
+
+struct CopiedLink
+{
+    int fromNode = 0;
+    int fromOutput = 0;
+    int toNode = 0;
+    int toInput = 0;
+};
+
+struct NodeClipboard
+{
+    std::vector<CopiedNode> nodes;
+    std::vector<CopiedLink> links;
+};
+
 // A lightweight popup menu drawn with NanoVG (v1-style right-click UX):
 // category headers plus clickable entries, hover highlight, wheel scroll.
 struct PopupMenu
@@ -848,6 +874,7 @@ int main()
     PopupMenu spawnMenu;
     PopupMenu actionMenu;
     NodeId actionTarget = INVALID_ID;
+    NodeClipboard clipboard;
     const auto openSpawnMenu = [&](float sx, float sy) {
         spawnMenu = PopupMenu{};
         spawnMenu.open = true;
@@ -873,6 +900,9 @@ int main()
         // Graph-wide actions first (v1 canvas menu), then the classes.
         spawnMenu.items.push_back(PopupMenu::Item{"Actions", true, ""});
         spawnMenu.items.push_back(PopupMenu::Item{"Arrange Nodes", false, "action:arrange"});
+        if (!clipboard.nodes.empty()) {
+            spawnMenu.items.push_back(PopupMenu::Item{"Paste", false, "action:paste"});
+        }
         for (const std::string& cat : categories) {
             spawnMenu.items.push_back(PopupMenu::Item{cat, true, ""});
             for (const NodeClass& cls : classes.All()) {
@@ -890,8 +920,8 @@ int main()
         actionMenu = PopupMenu{};
         actionMenu.open = true;
         actionTarget = nodeId;
-        const char* actions[6] = {"Edit Fn", "Collapse", "Expand",
-                                  "Align L", "Align T", "Distribute H"};
+        const char* actions[8] = {"Copy",    "Delete",  "Edit Fn",      "Collapse",
+                                  "Expand",  "Align L", "Align T",      "Distribute H"};
         for (const char* action : actions) {
             actionMenu.items.push_back(PopupMenu::Item{action, false, action});
         }
@@ -1299,6 +1329,144 @@ int main()
         panels.push_back(std::move(panel));
     }
 
+    // Clipboard + node removal helpers (right-click menu and shortcuts).
+    const auto copyNodes = [&](const std::vector<NodeId>& ids) {
+        if (ids.empty()) {
+            return;
+        }
+        clipboard = NodeClipboard{};
+        const auto copiedIndex = [&ids](NodeId id) {
+            for (std::size_t i = 0; i < ids.size(); ++i) {
+                if (ids[i] == id) {
+                    return static_cast<int>(i);
+                }
+            }
+            return -1;
+        };
+        for (NodeId id : ids) {
+            CopiedNode copied;
+            const Node* n = active->FindNode(id);
+            if (n != nullptr) {
+                copied.className = n->className;
+                copied.x = n->x;
+                copied.y = n->y;
+                copied.properties = n->properties;
+            }
+            clipboard.nodes.push_back(std::move(copied));
+        }
+        for (const Link& link : active->Links()) {
+            const Node* fromNode = active->FindPinOwner(link.fromPin);
+            const Node* toNode = active->FindPinOwner(link.toPin);
+            if (fromNode == nullptr || toNode == nullptr) {
+                continue;
+            }
+            const int fromIndex = copiedIndex(fromNode->id);
+            const int toIndex = copiedIndex(toNode->id);
+            if (fromIndex < 0 || toIndex < 0) {
+                continue;
+            }
+            int fromOutput = -1;
+            for (std::size_t k = 0; k < fromNode->outputs.size(); ++k) {
+                if (fromNode->outputs[k].id == link.fromPin) {
+                    fromOutput = static_cast<int>(k);
+                }
+            }
+            int toInput = -1;
+            for (std::size_t k = 0; k < toNode->inputs.size(); ++k) {
+                if (toNode->inputs[k].id == link.toPin) {
+                    toInput = static_cast<int>(k);
+                }
+            }
+            if (fromOutput >= 0 && toInput >= 0) {
+                clipboard.links.push_back(CopiedLink{fromIndex, fromOutput, toIndex, toInput});
+            }
+        }
+    };
+    // Pastes at (atX, atY) anchored to the copied set's top-left, or at a
+    // small offset from the originals when useAnchor is false (Ctrl+V).
+    const auto pasteClipboard = [&](float atX, float atY, bool useAnchor) {
+        if (clipboard.nodes.empty()) {
+            return;
+        }
+        float minX = 0.0f;
+        float minY = 0.0f;
+        bool first = true;
+        for (const CopiedNode& copied : clipboard.nodes) {
+            if (copied.className.empty()) {
+                continue;
+            }
+            if (first || copied.x < minX) {
+                minX = copied.x;
+            }
+            if (first || copied.y < minY) {
+                minY = copied.y;
+            }
+            first = false;
+        }
+        recordUndo();
+        std::vector<NodeId> newIds(clipboard.nodes.size(), INVALID_ID);
+        for (std::size_t i = 0; i < clipboard.nodes.size(); ++i) {
+            const CopiedNode& copied = clipboard.nodes[i];
+            if (copied.className.empty()) {
+                continue;
+            }
+            const NodeClass* cls = classes.Find(copied.className);
+            if (cls == nullptr) {
+                continue;
+            }
+            const float nx = useAnchor ? atX + (copied.x - minX) : copied.x + 40.0f;
+            const float ny = useAnchor ? atY + (copied.y - minY) : copied.y + 40.0f;
+            const NodeId id = active->AddNode(*cls, nx, ny);
+            Node* n = active->FindNode(id);
+            if (n != nullptr) {
+                const std::size_t count =
+                    std::min(n->properties.size(), copied.properties.size());
+                for (std::size_t k = 0; k < count; ++k) {
+                    n->properties[k] = copied.properties[k];
+                }
+            }
+            newIds[i] = id;
+        }
+        for (const CopiedLink& link : clipboard.links) {
+            const NodeId fromId = newIds[static_cast<std::size_t>(link.fromNode)];
+            const NodeId toId = newIds[static_cast<std::size_t>(link.toNode)];
+            Node* fromNode = active->FindNode(fromId);
+            Node* toNode = active->FindNode(toId);
+            if (fromNode == nullptr || toNode == nullptr) {
+                continue;
+            }
+            if (link.fromOutput < static_cast<int>(fromNode->outputs.size())
+                && link.toInput < static_cast<int>(toNode->inputs.size())) {
+                active->AddLink(
+                    fromNode->outputs[static_cast<std::size_t>(link.fromOutput)].id,
+                    toNode->inputs[static_cast<std::size_t>(link.toInput)].id);
+            }
+        }
+    };
+    const auto deleteNodes = [&](const std::vector<NodeId>& ids) {
+        if (ids.empty()) {
+            return;
+        }
+        recordUndo();
+        for (NodeId id : ids) {
+            active->RemoveNode(id);
+        }
+        fsm.ClearSelection();
+        shownNode = INVALID_ID;
+    };
+    // Selection when the action-menu target is part of it, else just the
+    // target node (shared by Copy/Delete/Collapse).
+    const auto targetNodes = [&](NodeId target) {
+        std::vector<NodeId> ids = fsm.Selection();
+        for (NodeId id : ids) {
+            if (id == target) {
+                return ids;
+            }
+        }
+        ids.assign(1, target);
+        return ids;
+    };
+
     // Per-panel visibility, refreshed every frame: the authoring panels
     // follow their toolbar toggles and the function panel shows only
     // while a function body is being edited.
@@ -1542,6 +1710,8 @@ int main()
                     } else if (wasSpawn) {
                         if (picked == "action:arrange") {
                             applyAutoLayout();
+                        } else if (picked == "action:paste") {
+                            pasteClipboard(menu.canvasX, menu.canvasY, true);
                         } else {
                             const NodeClass* cls = classes.Find(picked);
                             if (cls != nullptr) {
@@ -1549,6 +1719,10 @@ int main()
                                 graph.AddNode(*cls, menu.canvasX, menu.canvasY);
                             }
                         }
+                    } else if (picked == "Copy") {
+                        copyNodes(targetNodes(actionTarget));
+                    } else if (picked == "Delete") {
+                        deleteNodes(targetNodes(actionTarget));
                     } else if (picked == "Edit Fn") {
                         const Node* n = graph.FindNode(actionTarget);
                         FunctionDef* def =
@@ -1632,6 +1806,14 @@ int main()
                     if (!removed) {
                         breakpoints.push_back(hit);
                     }
+                }
+            } else if (e.type == EditorInputType::MouseDown
+                       && e.button == EditorMouseButton::Left && e.alt) {
+                // Alt+click severs the link under the cursor (v1 UX).
+                const LinkId hitLink = HitTestLink(graph, layout, cp.x, cp.y, 8.0f);
+                if (hitLink != INVALID_ID) {
+                    recordUndo();
+                    graph.RemoveLink(hitLink);
                 }
             } else if (e.type == EditorInputType::MouseDown
                        && e.button == EditorMouseButton::Left) {
@@ -1751,6 +1933,15 @@ int main()
                     fsm.ClearSelection();
                     shownNode = INVALID_ID;
                 }
+            } else if (e.type == EditorInputType::KeyDown && e.key == EditorKey::Delete) {
+                deleteNodes(fsm.Selection());
+            } else if (e.type == EditorInputType::KeyDown && e.key == EditorKey::Copy) {
+                copyNodes(fsm.Selection());
+            } else if (e.type == EditorInputType::KeyDown && e.key == EditorKey::Cut) {
+                copyNodes(fsm.Selection());
+                deleteNodes(fsm.Selection());
+            } else if (e.type == EditorInputType::KeyDown && e.key == EditorKey::Paste) {
+                pasteClipboard(0.0f, 0.0f, false);
             }
         }
 

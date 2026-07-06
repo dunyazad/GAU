@@ -1,4 +1,5 @@
 #include "core/TypeRegistry.h"
+#include "interaction/HitTest2.h"
 #include "interaction/InteractionFsm.h"
 #include "model/Graph.h"
 #include "model/NodeClassV2.h"
@@ -97,11 +98,33 @@ static void TestRubberBand()
     Check(fsm.GetState() == InteractionFsm::State::Idle, "idle after release");
 }
 
+// A point near the middle of a link's curve hits it; a far point does
+// not.
+static void TestLinkHit()
+{
+    Fixture f;
+    const PinId out = f.graph.FindNode(f.makeInt)->outputs[0].id;
+    const PinId in = f.graph.FindNode(f.print)->inputs[1].id;
+    f.graph.AddLink(out, in);
+    const render::GraphLayout layout = f.Layout();
+
+    const render::PinLayout* fromPin = layout.FindPin(out);
+    const render::PinLayout* toPin = layout.FindPin(in);
+    Check(fromPin != nullptr && toPin != nullptr, "link pin layout exists");
+    const float midX = (fromPin->x + toPin->x) * 0.5f;
+    const float midY = (fromPin->y + toPin->y) * 0.5f;
+    Check(HitTestLink(f.graph, layout, midX, midY, 12.0f) != INVALID_ID,
+          "midpoint hits the link curve");
+    Check(HitTestLink(f.graph, layout, midX, midY - 300.0f, 12.0f) == INVALID_ID,
+          "far point misses the link");
+}
+
 int main()
 {
     TestNodeDrag();
     TestLinkCreate();
     TestRubberBand();
+    TestLinkHit();
     if (failCount == 0) {
         std::printf("interaction_tests: all passed\n");
     }
