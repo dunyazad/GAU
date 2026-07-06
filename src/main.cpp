@@ -1347,7 +1347,10 @@ static void BuildWasmFunction(const FunctionEditorAction& action,
     LoadWasmModules();
 
     if (scan == WasmSignatureScan::Found) {
-        RegisterWasmNodeClass(signature.functionName, "Pure", std::move(signaturePins),
+        // Value functions are Pure (pulled on demand); void functions run
+        // side effects on the exec flow, so they register as Function.
+        const std::string category = signature.returnsVoid ? "Function" : "Pure";
+        RegisterWasmNodeClass(signature.functionName, category, std::move(signaturePins),
                               "wasm:" + WasmEntryExportName(signature.functionName),
                               documents, logLines);
         functionEditor.Close();

@@ -12,7 +12,9 @@
 // translation unit ("<name>__entry") that bridges the host ABI to the
 // typed call. Supported value types: int, long, float, double, bool,
 // String (GauStr) and any data-carrier class from gau_api.h (flattened
-// to one scalar pin per field).
+// to one scalar pin per field). A non-void return makes a Pure value
+// node; a void return makes a side-effect exec node (exec in, data
+// inputs, exec out) whose entry continues the flow with gau_exec(0).
 
 #include "model/NodeClass.h"
 

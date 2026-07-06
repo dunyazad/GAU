@@ -32,6 +32,14 @@ public:
     // Synchronously runs the exec chain attached to outputs[outputIndex].
     void RunExecOutput(int outputIndex);
 
+    // Wasm ABI index spaces: data pins and exec pins are numbered
+    // separately. gau_input_*/gau_output_* address the nth non-exec pin
+    // of a direction and gau_exec the nth exec output, so a function
+    // body never has to know how many exec pins precede its data pins.
+    Value GetDataInput(int dataIndex);
+    void SetDataOutput(int dataIndex, Value value);
+    void RunExecFlow(int execIndex);
+
     void Log(const std::string& message);
 
 private:

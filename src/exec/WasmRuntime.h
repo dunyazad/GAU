@@ -7,20 +7,23 @@ class ExecContext;
 
 // Hosts wasm3 and dispatches "wasm:<function>" node behaviors. Modules
 // (*.wasm) are loaded from the wasm/ directory; exported functions take
-// no parameters and talk to the node through imported host functions:
+// no parameters and talk to the node through imported host functions.
+// Data pins and exec pins are numbered separately: input/output indices
+// address the nth non-exec pin of that direction, and gau_exec addresses
+// the nth exec output pin.
 //
-//   int    gau_input_i32(int inputIndex);
-//   double gau_input_f64(int inputIndex);
-//   int    gau_input_bool(int inputIndex);
-//   int    gau_input_str(int inputIndex, char* buffer, int capacity);
+//   int    gau_input_i32(int dataInputIndex);
+//   double gau_input_f64(int dataInputIndex);
+//   int    gau_input_bool(int dataInputIndex);
+//   int    gau_input_str(int dataInputIndex, char* buffer, int capacity);
 //   double gau_property_f64(int propertyIndex);
 //   int    gau_property_i32(int propertyIndex);
 //   int    gau_property_str(int propertyIndex, char* buffer, int capacity);
-//   void   gau_output_i32(int outputIndex, int value);
-//   void   gau_output_f64(int outputIndex, double value);
-//   void   gau_output_bool(int outputIndex, int value);
-//   void   gau_output_str(int outputIndex, const char* text, int length);
-//   void   gau_exec(int outputIndex);
+//   void   gau_output_i32(int dataOutputIndex, int value);
+//   void   gau_output_f64(int dataOutputIndex, double value);
+//   void   gau_output_bool(int dataOutputIndex, int value);
+//   void   gau_output_str(int dataOutputIndex, const char* text, int length);
+//   void   gau_exec(int execOutputIndex);
 //   void   gau_log(const char* text, int length);
 class WasmRuntime
 {

@@ -72,20 +72,32 @@ Value AssembleLeaves(const TypeRegistry& types, TypeId id, const std::vector<Val
 class FlatWasmContext : public WasmNodeContext
 {
 public:
+    // Wasm ABI index spaces keep data and exec pins separate: input/output
+    // leaf indices span only non-exec pins (structs flatten to one leaf per
+    // field), and RunExec addresses the nth exec output pin. Exec pins get
+    // offset -1 so no leaf index ever resolves to them.
     FlatWasmContext(NodeEval& eval, const TypeRegistry& types) : eval(eval), types(types)
     {
         int offset = 0;
         for (const Pin& pin : eval.node->inputs) {
-            inputLeafOffset.push_back(offset);
-            offset += LeafCount(types, pin.type);
+            if (IsExecPin(pin)) {
+                inputLeafOffset.push_back(-1);
+            } else {
+                inputLeafOffset.push_back(offset);
+                offset += LeafCount(types, pin.type);
+            }
         }
         inputCache.assign(eval.node->inputs.size(), {});
         inputCached.assign(eval.node->inputs.size(), false);
 
         offset = 0;
         for (const Pin& pin : eval.node->outputs) {
-            outputLeafOffset.push_back(offset);
-            offset += LeafCount(types, pin.type);
+            if (IsExecPin(pin)) {
+                outputLeafOffset.push_back(-1);
+            } else {
+                outputLeafOffset.push_back(offset);
+                offset += LeafCount(types, pin.type);
+            }
         }
         totalOutputLeaves = offset;
         outputLeaves.assign(static_cast<std::size_t>(offset), Value::None());
@@ -97,6 +109,9 @@ public:
         const std::vector<Pin>& pins = eval.node->inputs;
         for (std::size_t i = 0; i < pins.size(); ++i) {
             const int base = inputLeafOffset[i];
+            if (base < 0) {
+                continue;
+            }
             const int next = base + LeafCount(types, pins[i].type);
             if (index < base || index >= next) {
                 continue;
@@ -121,7 +136,22 @@ public:
         }
     }
 
-    void RunExec(int index) override { eval.Then(index); }
+    void RunExec(int index) override
+    {
+        const std::vector<Pin>& pins = eval.node->outputs;
+        int seen = 0;
+        for (std::size_t i = 0; i < pins.size(); ++i) {
+            if (!IsExecPin(pins[i])) {
+                continue;
+            }
+            if (seen == index) {
+                eval.Then(static_cast<int>(i));
+                return;
+            }
+            ++seen;
+        }
+    }
+
     void Log(const std::string& message) override { eval.rt->Log(message); }
 
     // Reassembles struct/scalar output pins from the leaves the wasm wrote.
@@ -131,6 +161,9 @@ public:
         const std::vector<Pin>& pins = eval.node->outputs;
         for (std::size_t i = 0; i < pins.size(); ++i) {
             const int base = outputLeafOffset[i];
+            if (base < 0) {
+                continue;
+            }
             const int count = LeafCount(types, pins[i].type);
             bool anyWritten = false;
             for (int k = 0; k < count; ++k) {
@@ -149,6 +182,12 @@ public:
     }
 
 private:
+    bool IsExecPin(const Pin& pin) const
+    {
+        const TypeDesc* desc = types.Resolve(pin.type);
+        return desc != nullptr && desc->tag == TypeTag::Exec;
+    }
+
     NodeEval& eval;
     const TypeRegistry& types;
     std::vector<int> inputLeafOffset;

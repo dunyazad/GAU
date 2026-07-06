@@ -71,14 +71,14 @@ m3ApiRawFunction(GauInputI32)
 {
     m3ApiReturnType(int32_t);
     m3ApiGetArg(int32_t, index);
-    m3ApiReturn(g_activeContext ? CoerceInt(g_activeContext->GetInput(index)) : 0);
+    m3ApiReturn(g_activeContext ? CoerceInt(g_activeContext->GetDataInput(index)) : 0);
 }
 
 m3ApiRawFunction(GauInputF64)
 {
     m3ApiReturnType(double);
     m3ApiGetArg(int32_t, index);
-    m3ApiReturn(g_activeContext ? CoerceDouble(g_activeContext->GetInput(index)) : 0.0);
+    m3ApiReturn(g_activeContext ? CoerceDouble(g_activeContext->GetDataInput(index)) : 0.0);
 }
 
 m3ApiRawFunction(GauInputBool)
@@ -87,7 +87,7 @@ m3ApiRawFunction(GauInputBool)
     m3ApiGetArg(int32_t, index);
     int32_t result = 0;
     if (g_activeContext != nullptr) {
-        result = CoerceInt(g_activeContext->GetInput(index)) != 0 ? 1 : 0;
+        result = CoerceInt(g_activeContext->GetDataInput(index)) != 0 ? 1 : 0;
     }
     m3ApiReturn(result);
 }
@@ -100,7 +100,7 @@ m3ApiRawFunction(GauInputStr)
     m3ApiGetArg(int32_t, capacity);
     int32_t length = 0;
     if (g_activeContext != nullptr) {
-        length = CopyToWasmBuffer(CoerceString(g_activeContext->GetInput(index)),
+        length = CopyToWasmBuffer(CoerceString(g_activeContext->GetDataInput(index)),
                                   buffer, capacity);
     }
     m3ApiReturn(length);
@@ -139,7 +139,7 @@ m3ApiRawFunction(GauOutputI32)
     m3ApiGetArg(int32_t, index);
     m3ApiGetArg(int32_t, value);
     if (g_activeContext != nullptr) {
-        g_activeContext->SetOutput(index, Value(static_cast<int>(value)));
+        g_activeContext->SetDataOutput(index, Value(static_cast<int>(value)));
     }
     m3ApiSuccess();
 }
@@ -149,7 +149,7 @@ m3ApiRawFunction(GauOutputF64)
     m3ApiGetArg(int32_t, index);
     m3ApiGetArg(double, value);
     if (g_activeContext != nullptr) {
-        g_activeContext->SetOutput(index, Value(value));
+        g_activeContext->SetDataOutput(index, Value(value));
     }
     m3ApiSuccess();
 }
@@ -159,7 +159,7 @@ m3ApiRawFunction(GauOutputBool)
     m3ApiGetArg(int32_t, index);
     m3ApiGetArg(int32_t, value);
     if (g_activeContext != nullptr) {
-        g_activeContext->SetOutput(index, Value(value != 0));
+        g_activeContext->SetDataOutput(index, Value(value != 0));
     }
     m3ApiSuccess();
 }
@@ -170,7 +170,7 @@ m3ApiRawFunction(GauOutputStr)
     m3ApiGetArgMem(const char*, text);
     m3ApiGetArg(int32_t, length);
     if (g_activeContext != nullptr && text != nullptr && length >= 0) {
-        g_activeContext->SetOutput(index,
+        g_activeContext->SetDataOutput(index,
                                    Value(std::string(text, static_cast<std::size_t>(length))));
     }
     m3ApiSuccess();
@@ -180,7 +180,7 @@ m3ApiRawFunction(GauExec)
 {
     m3ApiGetArg(int32_t, index);
     if (g_activeContext != nullptr) {
-        g_activeContext->RunExecOutput(index);
+        g_activeContext->RunExecFlow(index);
     }
     m3ApiSuccess();
 }

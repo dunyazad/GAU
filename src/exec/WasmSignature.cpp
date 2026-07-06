@@ -439,6 +439,15 @@ bool BuildPinsFromWasmSignature(const WasmSignature& signature, std::vector<PinD
         return true;
     };
 
+    // A void return means a side-effect node: it runs on the exec flow
+    // (exec in, data inputs, exec out) instead of being pulled as a Pure
+    // value node -- a Pure node without outputs would never evaluate.
+    if (signature.returnsVoid) {
+        PinDef execIn;
+        execIn.direction = PinDirection::Input;
+        execIn.type = PinType::Exec;
+        outPins.push_back(execIn);
+    }
     for (const WasmSigParam& param : signature.params) {
         if (param.kind == WasmValueKind::Struct) {
             if (!appendStruct(PinDirection::Input, param.structName, param.name)) {
@@ -448,14 +457,18 @@ bool BuildPinsFromWasmSignature(const WasmSignature& signature, std::vector<PinD
             appendScalar(PinDirection::Input, param.kind, param.name);
         }
     }
-    if (!signature.returnsVoid) {
-        if (signature.returnValue.kind == WasmValueKind::Struct) {
-            if (!appendStruct(PinDirection::Output, signature.returnValue.structName, "")) {
-                return false;
-            }
-        } else {
-            appendScalar(PinDirection::Output, signature.returnValue.kind, "result");
+    if (signature.returnsVoid) {
+        PinDef execOut;
+        execOut.direction = PinDirection::Output;
+        execOut.type = PinType::Exec;
+        execOut.name = "then";
+        outPins.push_back(execOut);
+    } else if (signature.returnValue.kind == WasmValueKind::Struct) {
+        if (!appendStruct(PinDirection::Output, signature.returnValue.structName, "")) {
+            return false;
         }
+    } else {
+        appendScalar(PinDirection::Output, signature.returnValue.kind, "result");
     }
     return true;
 }
@@ -475,6 +488,8 @@ std::string GenerateWasmEntrySource(const WasmSignature& signature)
 
     out << "extern \"C\" void " << WasmEntryExportName(signature.functionName) << "(void)\n{\n";
 
+    // Data indices never include exec pins (separate ABI index spaces), so
+    // inputs start at 0 for Pure and exec nodes alike.
     int pinIndex = 0;
     for (std::size_t i = 0; i < signature.params.size(); ++i) {
         const WasmSigParam& param = signature.params[i];
@@ -520,7 +535,8 @@ std::string GenerateWasmEntrySource(const WasmSignature& signature)
     call += ")";
 
     if (signature.returnsVoid) {
-        out << "    " << call << ";\n";
+        out << "    " << call << ";\n"
+            << "    gau_exec(0);\n";
     } else {
         switch (signature.returnValue.kind) {
         case WasmValueKind::Int:

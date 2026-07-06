@@ -88,6 +88,43 @@ static void TestScalarSignature()
           "a + arg1 inputs and int result output");
 }
 
+// A void return with parameters makes an exec node: exec in first, data
+// inputs from index 1, exec out last, and the entry continues the flow.
+static void TestVoidReturnMakesExecNode()
+{
+    const std::string source =
+        "#include \"gau_api.h\"\n"
+        "extern \"C\" void PrintVector3f(const Vector3f& v)\n"
+        "{\n"
+        "    gau_log(ftoa(v.x));\n"
+        "}\n";
+
+    WasmSignature sig;
+    std::string error;
+    Check(ScanWasmSignature(source, "PrintVector3f", sig, error) == WasmSignatureScan::Found,
+          "void(param) signature found");
+    Check(sig.returnsVoid, "void return recognized");
+
+    std::vector<PinDef> pins;
+    Check(BuildPinsFromWasmSignature(sig, pins, error), "exec node pins build");
+    Check(pins.size() == 5, "exec + 3 data inputs + exec out");
+    if (pins.size() == 5) {
+        Check(pins[0].direction == PinDirection::Input && pins[0].type == PinType::Exec,
+              "first pin is the exec input");
+        Check(pins[1].name == "v_x" && pins[1].type == PinType::Float,
+              "data inputs follow the exec pin");
+        Check(pins[4].direction == PinDirection::Output && pins[4].type == PinType::Exec
+                  && pins[4].name == "then",
+              "last pin is the exec output");
+    }
+
+    const std::string entry = GenerateWasmEntrySource(sig);
+    Check(entry.find("Vector3f p0 = gau_read_Vector3f(0);") != std::string::npos,
+          "entry reads data inputs starting at 0 (data-only index space)");
+    Check(entry.find("gau_exec(0);") != std::string::npos,
+          "entry continues the exec flow");
+}
+
 // The classic manual-ABI form stays on the directive path.
 static void TestVoidFunctionIsNotTyped()
 {
@@ -130,6 +167,7 @@ int main()
 {
     TestStructParamStringReturn();
     TestScalarSignature();
+    TestVoidReturnMakesExecNode();
     TestVoidFunctionIsNotTyped();
     TestPointerUnsupported();
     TestCommentIgnored();

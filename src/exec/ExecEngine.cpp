@@ -33,6 +33,51 @@ void ExecContext::RunExecOutput(int outputIndex)
     engine.RunExecOutputChain(node, outputIndex);
 }
 
+Value ExecContext::GetDataInput(int dataIndex)
+{
+    int seen = 0;
+    for (std::size_t i = 0; i < node.inputs.size(); ++i) {
+        if (node.inputs[i].type == PinType::Exec) {
+            continue;
+        }
+        if (seen == dataIndex) {
+            return engine.GetInputValue(node, static_cast<int>(i), depth);
+        }
+        ++seen;
+    }
+    return Value(false);
+}
+
+void ExecContext::SetDataOutput(int dataIndex, Value value)
+{
+    int seen = 0;
+    for (std::size_t i = 0; i < node.outputs.size(); ++i) {
+        if (node.outputs[i].type == PinType::Exec) {
+            continue;
+        }
+        if (seen == dataIndex) {
+            engine.SetOutputValue(node, static_cast<int>(i), std::move(value));
+            return;
+        }
+        ++seen;
+    }
+}
+
+void ExecContext::RunExecFlow(int execIndex)
+{
+    int seen = 0;
+    for (std::size_t i = 0; i < node.outputs.size(); ++i) {
+        if (node.outputs[i].type != PinType::Exec) {
+            continue;
+        }
+        if (seen == execIndex) {
+            engine.RunExecOutputChain(node, static_cast<int>(i));
+            return;
+        }
+        ++seen;
+    }
+}
+
 void ExecContext::Log(const std::string& message)
 {
     engine.Log(message);
