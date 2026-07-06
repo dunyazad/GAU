@@ -115,6 +115,7 @@ add_executable(gau
     src/render/LinkRenderer.cpp
     src/render/ContextMenuRenderer.cpp
     src/render/ClassEditorDialogRenderer.cpp
+    src/render/ConfirmSaveDialogRenderer.cpp
     src/model/NodeGraph.cpp
     src/model/NodeClass.cpp
     src/model/UserType.cpp
@@ -133,6 +134,7 @@ add_executable(gau
     src/exec/WasmApiHeader.cpp
     src/exec/WasmSignature.cpp
     src/interaction/ActionMenu.cpp
+    src/interaction/ConfirmSaveDialog.cpp
     src/interaction/ContextMenu.cpp
     src/interaction/FunctionEditorDialog.cpp
     src/interaction/LogPanel.cpp

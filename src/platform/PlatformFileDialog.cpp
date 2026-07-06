@@ -53,36 +53,3 @@ bool PollFileDialogResult(FileDialogResult& outResult)
     pendingResults.erase(pendingResults.begin());
     return true;
 }
-
-ConfirmSaveResult ShowConfirmSaveDialog(SDL_Window* window, const std::string& documentName)
-{
-    const SDL_MessageBoxButtonData buttons[] = {
-        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 0, "Save"},
-        {0, 1, "Don't Save"},
-        {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 2, "Cancel"},
-    };
-
-    const std::string message = "Save changes to \"" + documentName + "\" before closing?";
-
-    SDL_MessageBoxData data = {};
-    data.flags = SDL_MESSAGEBOX_WARNING;
-    data.window = window;
-    data.title = "Unsaved Changes";
-    data.message = message.c_str();
-    data.numbuttons = 3;
-    data.buttons = buttons;
-
-    int buttonId = 2;
-    if (!SDL_ShowMessageBox(&data, &buttonId)) {
-        SDL_Log("PlatformFileDialog: SDL_ShowMessageBox failed: %s", SDL_GetError());
-        return ConfirmSaveResult::Cancel;
-    }
-    switch (buttonId) {
-    case 0:
-        return ConfirmSaveResult::Save;
-    case 1:
-        return ConfirmSaveResult::Discard;
-    default:
-        return ConfirmSaveResult::Cancel;
-    }
-}

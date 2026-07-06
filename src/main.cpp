@@ -4,6 +4,8 @@
 #include "platform/PlatformConsole.h"
 #include "platform/PlatformFileDialog.h"
 #include "platform/PlatformProcess.h"
+#include "interaction/ConfirmSaveDialog.h"
+#include "render/ConfirmSaveDialogRenderer.h"
 #include "interaction/FunctionEditorDialog.h"
 #include "render/FunctionEditorRenderer.h"
 #include "render/Canvas.h"
@@ -947,27 +949,56 @@ static bool UntitledHasContent(const Document& doc)
         && (!doc.graph.GetNodes().empty() || !doc.graph.GetComments().empty());
 }
 
-// Asks about unsaved changes when needed. discardsDocument is true for
-// tab closes (the document is really lost); at quit untitled documents
-// are auto-persisted to the session, so only titled dirty documents
-// prompt. Returns false when closing must be aborted.
-static bool ConfirmDocumentClose(Document& doc, PlatformWindow& window, bool discardsDocument)
+// True when closing this document must ask about unsaved changes.
+// discardsDocument is true for tab closes (the document is really
+// lost); at quit untitled documents are auto-persisted to the session,
+// so only titled dirty documents prompt. The question itself is asked
+// by the in-app ConfirmSaveDialog (themed like the rest of the editor),
+// so callers defer the close until the dialog resolves.
+static bool NeedsClosePrompt(const Document& doc, bool discardsDocument)
 {
-    const bool needsPrompt = discardsDocument
-                                 ? (doc.IsDirty() || UntitledHasContent(doc))
-                                 : (doc.IsDirty() && !doc.filePath.empty());
-    if (!needsPrompt) {
-        return true;
+    return discardsDocument ? (doc.IsDirty() || UntitledHasContent(doc))
+                            : (doc.IsDirty() && !doc.filePath.empty());
+}
+
+// Close intent deferred while the confirm-save dialog is open.
+struct PendingCloseAction
+{
+    enum class Kind
+    {
+        None,
+        CloseTab,
+        Quit,
+    };
+    Kind kind = Kind::None;
+    // Tab index to close, or the quit scan's current document index.
+    int docIndex = -1;
+};
+
+// Removes a tab and keeps the document list and active index valid.
+static void CloseTabAt(int tabIndex, std::vector<std::unique_ptr<Document>>& documents,
+                       int& activeDocIndex, PlatformWindow& window)
+{
+    documents.erase(documents.begin() + tabIndex);
+    if (documents.empty()) {
+        AddNewDocument(documents, window);
     }
-    switch (ShowConfirmSaveDialog(window.GetSDLWindow(), doc.displayName)) {
-    case ConfirmSaveResult::Save:
-        return SaveDocumentBlocking(doc, window);
-    case ConfirmSaveResult::Discard:
-        return true;
-    case ConfirmSaveResult::Cancel:
-        break;
+    if (activeDocIndex >= static_cast<int>(documents.size())) {
+        activeDocIndex = static_cast<int>(documents.size()) - 1;
     }
-    return false;
+}
+
+// Index of the first document at or after startIndex that needs a
+// close prompt at quit; -1 when none does.
+static int NextQuitPromptIndex(const std::vector<std::unique_ptr<Document>>& documents,
+                               int startIndex)
+{
+    for (int i = startIndex; i < static_cast<int>(documents.size()); ++i) {
+        if (NeedsClosePrompt(*documents[static_cast<std::size_t>(i)], false)) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 // Inline rename of a tab title, started by clicking the active tab.
@@ -1537,19 +1568,6 @@ static void ApplyPropertyPanelAction(const PropertyPanelAction& action, const No
         graph);
 }
 
-// Prompts for every dirty document before quitting; documents stay open
-// so the session file still records them. Returns false to abort quit.
-static bool ConfirmQuit(std::vector<std::unique_ptr<Document>>& documents,
-                        PlatformWindow& window)
-{
-    for (std::unique_ptr<Document>& doc : documents) {
-        if (!ConfirmDocumentClose(*doc, window, false)) {
-            return false;
-        }
-    }
-    return true;
-}
-
 // Loads a graph file into a new document tab. Returns false when the
 // file could not be read/parsed (per-entry problems are only reported).
 static bool OpenDocumentFromPath(const std::string& filePath,
@@ -1693,9 +1711,11 @@ static void CollectSessionDocuments(EditorSettings& settings,
 
 // Handles a left click on the tab bar. Returns true when consumed.
 static bool ProcessTabBarClick(const EditorInputEvent& event, float screenWidth,
+                               float screenHeight,
                                std::vector<std::unique_ptr<Document>>& documents,
                                int& activeDocIndex, PlatformWindow& window,
                                CanvasController& controller, TabRenameState& tabRename,
+                               ConfirmSaveDialog& confirmSave, PendingCloseAction& pendingClose,
                                std::vector<std::string>& logLines)
 {
     const TabBarHit hit = HitTestTabBar(event.x, event.y,
@@ -1714,20 +1734,18 @@ static bool ProcessTabBarClick(const EditorInputEvent& event, float screenWidth,
                 documents[static_cast<std::size_t>(hit.tabIndex)]->displayName;
         }
         break;
-    case TabBarHit::Kind::CloseTab:
-        if (!ConfirmDocumentClose(*documents[static_cast<std::size_t>(hit.tabIndex)],
-                                  window, true)) {
+    case TabBarHit::Kind::CloseTab: {
+        Document& target = *documents[static_cast<std::size_t>(hit.tabIndex)];
+        if (NeedsClosePrompt(target, true)) {
+            pendingClose.kind = PendingCloseAction::Kind::CloseTab;
+            pendingClose.docIndex = hit.tabIndex;
+            confirmSave.Open(target.displayName, screenWidth, screenHeight);
             break;
         }
-        documents.erase(documents.begin() + hit.tabIndex);
-        if (documents.empty()) {
-            AddNewDocument(documents, window);
-        }
-        if (activeDocIndex >= static_cast<int>(documents.size())) {
-            activeDocIndex = static_cast<int>(documents.size()) - 1;
-        }
+        CloseTabAt(hit.tabIndex, documents, activeDocIndex, window);
         controller = CanvasController();
         break;
+    }
     case TabBarHit::Kind::NewTab:
         activeDocIndex = AddNewDocument(documents, window);
         controller = CanvasController();
@@ -1792,6 +1810,9 @@ int main(int argc, char** argv)
     NodeLayoutCache layoutCache;
     ContextMenu contextMenu;
     ClassEditorDialog classDialog;
+    ConfirmSaveDialog confirmSave;
+    PendingCloseAction pendingClose;
+    bool quitConfirmed = false;
     FunctionEditorDialog functionEditor;
     functionEditor.SetCharWidth(MeasureMonoCharWidth(vg, 12.0f * UI_SCALE));
     PropertyPanel propertyPanel;
@@ -1814,10 +1835,22 @@ int main(int argc, char** argv)
 
     for (;;) {
         if (!window.PumpEvents(events)) {
-            if (ConfirmQuit(documents, window)) {
+            // Quit requested: prompt for the first unsaved document with
+            // the in-app dialog and keep rendering; the dialog's
+            // resolution walks the remaining documents.
+            const int promptIndex = NextQuitPromptIndex(documents, 0);
+            if (promptIndex < 0) {
                 break;
             }
-            continue;
+            if (!confirmSave.IsOpen()) {
+                pendingClose.kind = PendingCloseAction::Kind::Quit;
+                pendingClose.docIndex = promptIndex;
+                confirmSave.Open(
+                    documents[static_cast<std::size_t>(promptIndex)]->displayName,
+                    static_cast<float>(window.GetWidth()),
+                    static_cast<float>(window.GetHeight()));
+            }
+            events.clear();
         }
 
         const float screenWidth = static_cast<float>(window.GetWidth());
@@ -1825,6 +1858,42 @@ int main(int argc, char** argv)
 
         for (const EditorInputEvent& event : events) {
             Document& doc = *documents[static_cast<std::size_t>(activeDocIndex)];
+
+            // The confirm-save modal outranks every other consumer while a
+            // close is pending.
+            if (confirmSave.IsOpen()) {
+                const ConfirmSaveAction act = confirmSave.HandleEvent(event);
+                if (act == ConfirmSaveAction::None) {
+                    continue;
+                }
+                Document& target =
+                    *documents[static_cast<std::size_t>(pendingClose.docIndex)];
+                if (act == ConfirmSaveAction::Cancel
+                    || (act == ConfirmSaveAction::Save
+                        && !SaveDocumentBlocking(target, window))) {
+                    confirmSave.Close();
+                    pendingClose = PendingCloseAction{};
+                    continue;
+                }
+                confirmSave.Close();
+                if (pendingClose.kind == PendingCloseAction::Kind::CloseTab) {
+                    CloseTabAt(pendingClose.docIndex, documents, activeDocIndex, window);
+                    controller = CanvasController();
+                    pendingClose = PendingCloseAction{};
+                } else {
+                    const int next = NextQuitPromptIndex(documents, pendingClose.docIndex + 1);
+                    if (next < 0) {
+                        quitConfirmed = true;
+                        pendingClose = PendingCloseAction{};
+                    } else {
+                        pendingClose.docIndex = next;
+                        confirmSave.Open(
+                            documents[static_cast<std::size_t>(next)]->displayName,
+                            screenWidth, screenHeight);
+                    }
+                }
+                continue;
+            }
 
             if (functionEditor.IsOpen()) {
                 // Clipboard keys bridge to the OS clipboard here (the
@@ -1979,8 +2048,9 @@ int main(int argc, char** argv)
             // Clicks in the tab bar never reach the canvas.
             if (event.type == EditorInputType::MouseDown && event.y < TAB_BAR_HEIGHT) {
                 if (event.button == EditorMouseButton::Left) {
-                    ProcessTabBarClick(event, screenWidth, documents, activeDocIndex,
-                                       window, controller, tabRename, logLines);
+                    ProcessTabBarClick(event, screenWidth, screenHeight, documents,
+                                       activeDocIndex, window, controller, tabRename,
+                                       confirmSave, pendingClose, logLines);
                     // Blocking dialogs may have re-pumped the event list;
                     // stop iterating this frame's events.
                     break;
@@ -2156,9 +2226,14 @@ int main(int argc, char** argv)
         DrawActionMenu(vg, actionMenu);
         DrawClassEditorDialog(vg, classDialog, screenWidth, screenHeight);
         DrawFunctionEditorDialog(vg, functionEditor, screenWidth, screenHeight);
+        DrawConfirmSaveDialog(vg, confirmSave, screenWidth, screenHeight);
         nvgEndFrame(vg);
 
         window.EndFrame();
+
+        if (quitConfirmed) {
+            break;
+        }
     }
 
     settings.collapsedCategories = contextMenu.GetCollapsedCategories();

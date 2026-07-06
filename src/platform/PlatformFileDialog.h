@@ -25,13 +25,3 @@ void ShowGraphFileDialog(SDL_Window* window, FileDialogType type);
 
 // Pops one completed dialog result. Returns false when none is pending.
 bool PollFileDialogResult(FileDialogResult& outResult);
-
-enum class ConfirmSaveResult
-{
-    Save,
-    Discard,
-    Cancel,
-};
-
-// Synchronous native "save changes before closing?" message box.
-ConfirmSaveResult ShowConfirmSaveDialog(SDL_Window* window, const std::string& documentName);
