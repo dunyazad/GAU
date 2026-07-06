@@ -7,10 +7,14 @@
 ```
 cmake -S . -B build
 cmake --build build --config Debug
-ctest --test-dir build -C Debug        # 25개 스위트, 전부 통과
-build/Debug/gau.exe                     # v1 앱
-build/Debug/gau2.exe                    # v2 앱
+ctest --test-dir build -C Debug        # 전 스위트 통과
+build/Debug/gau.exe                     # 통합 앱 (v2 스택, 구 gau2)
 ```
+
+앱은 gau 하나다(버전 접미사 없음). 구 v1 실행 파일(main.cpp 조립)은 v1 브랜치에
+보존되고 main 에서는 빌드하지 않는다. v1 계층 소스/테스트는 공유 코드 보호를 위해
+트리에 남아 있다. v1 의 wasm 저작 UI(함수 에디터/클래스 에디터)는 아직 gau 로
+포팅되지 않았다 -- 다음 착수 항목.
 
 루트의 `checklist.md` / `context-notes.md` 는 v1 사용자 타입 작업 잔재라 무시. v2 핸드오프는
 이 문서가 단일 소스.

@@ -229,7 +229,7 @@ static void DrawMinimap(NVGcontext* vg, const render::Canvas& canvas,
 int main()
 {
     PlatformWindow window;
-    if (!window.Init("GAU v2", 1280, 800)) {
+    if (!window.Init("GAU", 1280, 800)) {
         return 1;
     }
     NVGcontext* vg = CreatePlatformNVGContext();

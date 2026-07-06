@@ -91,93 +91,8 @@ if(MSVC)
     target_compile_definitions(gau_render PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
-# --- editor executable ---
-add_executable(gau
-    src/main.cpp
-    src/platform/GLLoader.cpp
-    src/platform/PlatformWindow.cpp
-    src/platform/PlatformInput.cpp
-    src/platform/PlatformNVG.cpp
-    src/platform/PlatformFileDialog.cpp
-    src/platform/PlatformConsole.cpp
-    src/platform/PlatformProcess.cpp
-    src/platform/PlatformClipboard.cpp
-    src/render/Canvas.cpp
-    src/render/GridRenderer.cpp
-    src/render/SelectionRenderer.cpp
-    src/render/CommentRenderer.cpp
-    src/render/TabBarRenderer.cpp
-    src/render/PropertyPanelRenderer.cpp
-    src/render/ActionMenuRenderer.cpp
-    src/render/LogPanelRenderer.cpp
-    src/render/FunctionEditorRenderer.cpp
-    src/render/NodeRenderer.cpp
-    src/render/LinkRenderer.cpp
-    src/render/ContextMenuRenderer.cpp
-    src/render/ClassEditorDialogRenderer.cpp
-    src/render/ConfirmSaveDialogRenderer.cpp
-    src/model/NodeGraph.cpp
-    src/model/NodeClass.cpp
-    src/model/ExecPinPolicy.cpp
-    src/model/UserType.cpp
-    src/model/BuiltinNodeClasses.cpp
-    src/model/NodeClassLoader.cpp
-    src/model/EditorSettings.cpp
-    src/model/Guid.cpp
-    src/model/UndoStack.cpp
-    src/model/GraphCommands.cpp
-    src/model/GraphClipboard.cpp
-    src/model/GraphSerializer.cpp
-    src/model/PropertyText.cpp
-    src/exec/ExecEngine.cpp
-    src/exec/BuiltinNodes.cpp
-    src/exec/WasmRuntime.cpp
-    src/exec/WasmApiHeader.cpp
-    src/exec/WasmSignature.cpp
-    src/interaction/ActionMenu.cpp
-    src/interaction/ConfirmSaveDialog.cpp
-    src/interaction/ContextMenu.cpp
-    src/interaction/FunctionEditorDialog.cpp
-    src/interaction/LogPanel.cpp
-    src/interaction/PropertyPanel.cpp
-    src/interaction/TabBar.cpp
-    src/interaction/ClassEditorDialog.cpp
-    src/interaction/HitTest.cpp
-    src/interaction/NodeAlign.cpp
-)
-target_include_directories(gau PRIVATE src external)
-target_link_libraries(gau PRIVATE SDL3::SDL3-static nanovg wasm3)
-if(MSVC)
-    target_compile_definitions(gau PRIVATE _CRT_SECURE_NO_WARNINGS)
-endif()
-
-# Keep the sample custom node file next to the executable so launching
-# the exe directly (cwd = exe dir) also finds it.
-add_custom_command(TARGET gau POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/custom_nodes.json
-            $<TARGET_FILE_DIR:gau>
-)
-
-# Stage the wasm sources (with the generated gau_api.h) next to the exe so
-# the in-app Function Editor can build against them from a distributed layout.
-add_custom_command(TARGET gau POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/wasm_src
-            $<TARGET_FILE_DIR:gau>/wasm_src
-)
-
-# Bundle the wasm toolchain (clang/wasm-ld) if a tools/ tree is present in the
-# source root. It is not tracked in git (see .gitignore); a packaging step
-# drops a wasm32-capable clang under tools/llvm/bin. FindClangForWasm looks
-# there first, so a shipped app builds wasm functions without a separate LLVM.
-if(EXISTS ${CMAKE_SOURCE_DIR}/tools)
-    add_custom_command(TARGET gau POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-                ${CMAKE_SOURCE_DIR}/tools
-                $<TARGET_FILE_DIR:gau>/tools
-    )
-endif()
+# The legacy v1 editor executable lives on the v1 branch; main ships a
+# single app target (gau, below) built on the v2 stack.
 
 # --- gau_interaction (v2 hit test + interaction FSM) ---
 add_library(gau_interaction STATIC
@@ -205,8 +120,8 @@ if(MSVC)
     target_compile_definitions(gau_io PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
-# --- gau2 (v2 app: assembles the new stack on the v1 platform) ---
-add_executable(gau2
+# --- gau (the editor: v2 stack on the shared platform layer) ---
+add_executable(gau
     src/app/Main.cpp
     src/platform/GLLoader.cpp
     src/platform/PlatformWindow.cpp
@@ -214,11 +129,19 @@ add_executable(gau2
     src/platform/PlatformInput.cpp
     src/platform/PlatformFileDialog.cpp
 )
-target_include_directories(gau2 PRIVATE src external)
-target_link_libraries(gau2 PRIVATE SDL3::SDL3-static nanovg gau_render gau_exec gau_interaction gau_io)
+target_include_directories(gau PRIVATE src external)
+target_link_libraries(gau PRIVATE SDL3::SDL3-static nanovg gau_render gau_exec gau_interaction gau_io)
 if(MSVC)
-    target_compile_definitions(gau2 PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(gau PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
+
+# Stage the wasm modules next to the exe so launching it directly
+# (cwd = exe dir) still finds custom node functions.
+add_custom_command(TARGET gau POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/wasm
+            $<TARGET_FILE_DIR:gau>/wasm
+)
 
 # --- tests ---
 enable_testing()
