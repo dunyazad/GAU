@@ -134,6 +134,8 @@ add_executable(gau
     src/platform/PlatformClipboard.cpp
     src/interaction/FunctionEditorDialog.cpp
     src/render/FunctionEditorRenderer.cpp
+    src/interaction/ConfirmSaveDialog.cpp
+    src/render/ConfirmSaveDialogRenderer.cpp
 )
 target_include_directories(gau PRIVATE src external)
 target_link_libraries(gau PRIVATE SDL3::SDL3-static nanovg gau_render gau_exec gau_interaction gau_io)

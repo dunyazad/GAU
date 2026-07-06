@@ -9,7 +9,9 @@
 #include "platform/PlatformWindow.h"
 
 #include "WasmBuild.h"
+#include "interaction/ConfirmSaveDialog.h"
 #include "interaction/FunctionEditorDialog.h"
+#include "render/ConfirmSaveDialogRenderer.h"
 #include "render/FunctionEditorRenderer.h"
 
 #include "core/TypeRegistry.h"
@@ -51,6 +53,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <map>
@@ -490,6 +493,13 @@ int main()
     // class out via the WasmBuild pipeline.
     FunctionEditorDialog functionEditor;
     functionEditor.SetCharWidth(MeasureMonoCharWidth(vg, 12.0f * UI_SCALE));
+
+    // Quit-time unsaved-changes prompt. Dirty means "the project would
+    // serialize differently than the last saved/loaded state", so node
+    // moves count and no per-edit flags are needed.
+    ConfirmSaveDialog confirmSave;
+    bool quitConfirmed = false;
+    bool quitAfterSave = false;
 
     // The editable project (types, classes, functions, variables, comments,
     // graph) is one save/load unit; references keep the rest of the code
@@ -1299,9 +1309,13 @@ int main()
     // dependent UI. The current path feeds the session file so the next
     // start reopens the same project.
     std::string currentProjectPath = session.projectPath;
+    // Serialized form of the project at the last save/load; the quit
+    // prompt compares against it to detect unsaved changes.
+    std::string lastSavedSnapshot;
     const auto saveProject = [&](const std::string& path) {
         SaveProjectFile(path, project);
         currentProjectPath = path;
+        lastSavedSnapshot = ExportProject(project);
     };
     const auto loadProject = [&](const std::string& path) {
         types.Clear();
@@ -1328,6 +1342,7 @@ int main()
         pendingFields.clear();
         pendingPins.clear();
         currentProjectPath = path;
+        lastSavedSnapshot = ExportProject(project);
         if (rebuildPalette) {
             rebuildPalette();
         }
@@ -1344,6 +1359,7 @@ int main()
             currentProjectPath.clear();
         }
     }
+    lastSavedSnapshot = ExportProject(project);
 
     std::vector<EditorInputEvent> events;
     bool panning = false;
@@ -1391,15 +1407,38 @@ int main()
 
     for (;;) {
         if (!window.PumpEvents(events)) {
-            break;
+            // Quit requested: leave silently when the project matches its
+            // last saved form, otherwise ask via the in-app dialog and
+            // keep rendering until it resolves.
+            if (ExportProject(project) == lastSavedSnapshot) {
+                break;
+            }
+            if (!confirmSave.IsOpen()) {
+                const std::string docName =
+                    currentProjectPath.empty()
+                        ? "untitled"
+                        : std::filesystem::path(currentProjectPath).filename().string();
+                confirmSave.Open(docName, static_cast<float>(window.GetWidth()),
+                                 static_cast<float>(window.GetHeight()));
+            }
+            events.clear();
         }
         FileDialogResult dialog;
         while (PollFileDialogResult(dialog)) {
             if (!dialog.accepted) {
+                // A cancelled save-on-quit aborts the quit.
+                quitAfterSave = false;
                 continue;
             }
             if (dialog.type == FileDialogType::SaveGraph) {
-                saveProject(dialog.path);
+                std::filesystem::path savePath(dialog.path);
+                if (savePath.extension().empty()) {
+                    savePath += ".json";
+                }
+                saveProject(savePath.string());
+                if (quitAfterSave) {
+                    quitConfirmed = true;
+                }
             } else {
                 loadProject(dialog.path);
             }
@@ -1422,6 +1461,29 @@ int main()
         panelShown[fnPanelIndex] = (editingDef != nullptr) ? 1 : 0;
 
         for (const EditorInputEvent& e : events) {
+            // The quit confirm dialog outranks everything else.
+            if (confirmSave.IsOpen()) {
+                const ConfirmSaveAction act = confirmSave.HandleEvent(e);
+                if (act == ConfirmSaveAction::Cancel) {
+                    confirmSave.Close();
+                } else if (act == ConfirmSaveAction::Discard) {
+                    confirmSave.Close();
+                    quitConfirmed = true;
+                } else if (act == ConfirmSaveAction::Save) {
+                    confirmSave.Close();
+                    if (!currentProjectPath.empty()) {
+                        saveProject(currentProjectPath);
+                        quitConfirmed = true;
+                    } else {
+                        // No path yet: route through the native save
+                        // dialog and quit once it lands.
+                        quitAfterSave = true;
+                        ShowGraphFileDialog(window.GetSDLWindow(), FileDialogType::SaveGraph);
+                    }
+                }
+                continue;
+            }
+
             // The function editor is modal and outranks everything.
             if (functionEditor.IsOpen()) {
                 // Clipboard keys bridge to the OS clipboard here (the
@@ -1770,8 +1832,13 @@ int main()
         DrawPopupMenu(vg, spawnMenu);
         DrawPopupMenu(vg, actionMenu);
         DrawFunctionEditorDialog(vg, functionEditor, screenW, screenH);
+        DrawConfirmSaveDialog(vg, confirmSave, screenW, screenH);
         nvgEndFrame(vg);
         window.EndFrame();
+
+        if (quitConfirmed) {
+            break;
+        }
     }
 
     session.windowW = window.GetWidth();
