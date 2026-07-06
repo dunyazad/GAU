@@ -28,8 +28,12 @@ v1 수준의 앱 UX 는 별도 축이며, 통합 후 다음이 채워졌다: 우
   리로드 -> 클래스 등록)을 돌린다. v2 는 struct 파라미터가 단일 struct 핀으로
   유지되고(FlatWasmContext 평탄화), void 반환은 exec 노드가 된다.
   `wasm_authoring_tests` + 실전 E2E(clang, "10.00, 29.00, 0.01") 검증.
-- 미저장 변경 확인 다이얼로그 + 자동 저장/세션 복구 (v1 ConfirmSaveDialog 상당).
-- 노드 복사/붙여넣기, 링크 절단 등 v1 에만 있는 편의 기능 점검.
+- ~~미저장 변경 확인 다이얼로그~~ -- 완료. 종료 시 직렬화 스냅샷 비교로 dirty 판정,
+  공용 ConfirmSaveDialog(Save/Don't Save/Cancel), 경로 없으면 네이티브 저장 후 종료.
+- ~~노드 삭제/복사/붙여넣기/링크 절단~~ -- 완료. Delete/Ctrl+C/X/V + 액션 메뉴
+  Copy/Delete + 캔버스 메뉴 Paste(클릭 위치 앵커), alt+클릭 링크 절단(HitTestLink).
+- 남은 후보: 자동 저장(주기 저장 + 크래시 복구, FR-PRJ-2), 링크 절단선(Ctrl+드래그,
+  M4 스펙), 붙여넣기 후 자동 선택.
 
 루트의 `checklist.md` / `context-notes.md` 는 v1 사용자 타입 작업 잔재라 무시. v2 핸드오프는
 이 문서가 단일 소스.
