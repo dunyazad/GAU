@@ -32,8 +32,14 @@ v1 수준의 앱 UX 는 별도 축이며, 통합 후 다음이 채워졌다: 우
   공용 ConfirmSaveDialog(Save/Don't Save/Cancel), 경로 없으면 네이티브 저장 후 종료.
 - ~~노드 삭제/복사/붙여넣기/링크 절단~~ -- 완료. Delete/Ctrl+C/X/V + 액션 메뉴
   Copy/Delete + 캔버스 메뉴 Paste(클릭 위치 앵커), alt+클릭 링크 절단(HitTestLink).
-- 남은 후보: 자동 저장(주기 저장 + 크래시 복구, FR-PRJ-2), 링크 절단선(Ctrl+드래그,
-  M4 스펙), 붙여넣기 후 자동 선택.
+- ~~자동 저장 + 크래시 복구(FR-PRJ-2)~~ -- 완료. 30초 주기 .gau_autosave.json
+  (저장/자동저장 상태와 다를 때만), 수동 저장/클린 종료 시 제거, 시작 시 존재하면
+  Restore/Discard 제안(무응답 종료 시 파일 보존).
+- ~~링크 절단선(Ctrl+드래그, M4)~~ -- 완료. 빨간 절단선 렌더 + 교차 링크 일괄 삭제.
+- ~~붙여넣기 후 자동 선택~~ -- 완료 (InteractionFsm::SetSelection).
+
+v1 파리티 목표 항목은 모두 채워졌다. 남은 큰 축은 FR-PLT-1~2(Apple/터치, macOS
+환경 필요)뿐이다.
 
 루트의 `checklist.md` / `context-notes.md` 는 v1 사용자 타입 작업 잔재라 무시. v2 핸드오프는
 이 문서가 단일 소스.
