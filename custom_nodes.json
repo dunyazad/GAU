@@ -75,6 +75,11 @@
           "direction": "out",
           "name": "z",
           "type": "float"
+        },
+        {
+          "direction": "out",
+          "name": "self",
+          "type": "Vector3f"
         }
       ],
       "properties": [
@@ -100,74 +105,22 @@
     },
     {
       "category": "Pure",
-      "execFn": "wasm:AddVector3f",
-      "name": "AddVector3f",
+      "execFn": "wasm:MakeStringVector3f__entry",
+      "name": "MakeStringVector3f",
       "pins": [
         {
           "direction": "in",
-          "name": "ax",
+          "name": "v_x",
           "type": "float"
         },
         {
           "direction": "in",
-          "name": "ay",
+          "name": "v_y",
           "type": "float"
         },
         {
           "direction": "in",
-          "name": "az",
-          "type": "float"
-        },
-        {
-          "direction": "in",
-          "name": "bx",
-          "type": "float"
-        },
-        {
-          "direction": "in",
-          "name": "by",
-          "type": "float"
-        },
-        {
-          "direction": "in",
-          "name": "bz",
-          "type": "float"
-        },
-        {
-          "direction": "out",
-          "name": "x",
-          "type": "float"
-        },
-        {
-          "direction": "out",
-          "name": "y",
-          "type": "float"
-        },
-        {
-          "direction": "out",
-          "name": "z",
-          "type": "float"
-        }
-      ]
-    },
-    {
-      "category": "Pure",
-      "execFn": "wasm:MakeStringFromVector3f",
-      "name": "MakeStringFromVector3f",
-      "pins": [
-        {
-          "direction": "in",
-          "name": "x",
-          "type": "float"
-        },
-        {
-          "direction": "in",
-          "name": "y",
-          "type": "float"
-        },
-        {
-          "direction": "in",
-          "name": "z",
+          "name": "v_z",
           "type": "float"
         },
         {
@@ -175,7 +128,25 @@
           "name": "result",
           "type": "string"
         }
-      ]
+      ],
+      "properties": []
+    },
+    {
+      "category": "Function",
+      "name": "PrintVector3f",
+      "pins": [
+        {
+          "direction": "in",
+          "name": "exec",
+          "type": "exec"
+        },
+        {
+          "direction": "in",
+          "name": "in",
+          "type": "Vector3f"
+        }
+      ],
+      "properties": []
     }
   ],
   "types": []

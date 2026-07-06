@@ -2,100 +2,84 @@
   "comments": [],
   "links": [
     {
-      "fromNode": 0,
+      "fromId": "b07c11a7-befa-4a7a-b5f6-3ec04fd9b051",
       "fromPin": 0,
       "points": [],
-      "toNode": 1,
+      "toId": "ba473a87-8e51-420d-ab3e-adb2b9f0e8a4",
       "toPin": 0
     },
     {
-      "fromNode": 0,
+      "fromId": "b07c11a7-befa-4a7a-b5f6-3ec04fd9b051",
       "fromPin": 1,
       "points": [],
-      "toNode": 1,
+      "toId": "ba473a87-8e51-420d-ab3e-adb2b9f0e8a4",
       "toPin": 1
     },
     {
-      "fromNode": 0,
+      "fromId": "b07c11a7-befa-4a7a-b5f6-3ec04fd9b051",
       "fromPin": 2,
       "points": [],
-      "toNode": 1,
+      "toId": "ba473a87-8e51-420d-ab3e-adb2b9f0e8a4",
       "toPin": 2
     },
     {
-      "fromNode": 1,
+      "fromId": "9bfc6339-b6d3-4e2f-a83c-42d5722b2417",
       "fromPin": 0,
       "points": [],
-      "toNode": 4,
+      "toId": "794d8b41-1248-4e63-a3e2-aba862339f55",
       "toPin": 0
     },
     {
-      "fromNode": 1,
-      "fromPin": 1,
+      "fromId": "ba473a87-8e51-420d-ab3e-adb2b9f0e8a4",
+      "fromPin": 3,
       "points": [],
-      "toNode": 4,
+      "toId": "794d8b41-1248-4e63-a3e2-aba862339f55",
       "toPin": 1
-    },
-    {
-      "fromNode": 1,
-      "fromPin": 2,
-      "points": [],
-      "toNode": 4,
-      "toPin": 2
-    },
-    {
-      "fromNode": 4,
-      "fromPin": 0,
-      "points": [],
-      "toNode": 3,
-      "toPin": 1
-    },
-    {
-      "fromNode": 2,
-      "fromPin": 0,
-      "points": [],
-      "toNode": 3,
-      "toPin": 0
     }
   ],
   "nodes": [
     {
       "class": "Vector3f",
+      "id": "b07c11a7-befa-4a7a-b5f6-3ec04fd9b051",
       "properties": [
-        10.0,
-        29.0,
-        0.01
+        0.1,
+        0.2,
+        0.3
       ],
-      "x": 210.70761108398438,
-      "y": 290.7030029296875
+      "x": 170.0648956298828,
+      "y": 207.28253173828125
     },
     {
       "class": "Vector3f",
+      "id": "ba473a87-8e51-420d-ab3e-adb2b9f0e8a4",
       "properties": [
         0.0,
         0.0,
         0.0
       ],
-      "x": 526.0735473632813,
-      "y": 304.54364013671875
+      "x": 449.2951354980469,
+      "y": 249.6445770263672
     },
     {
       "class": "Event Begin",
+      "id": "9bfc6339-b6d3-4e2f-a83c-42d5722b2417",
       "properties": [],
-      "x": 170.0648956298828,
-      "y": 101.28252410888672
+      "x": 448.9573669433594,
+      "y": 63.47865295410156
     },
     {
-      "class": "Print String",
+      "class": "PrintVector3f",
+      "id": "794d8b41-1248-4e63-a3e2-aba862339f55",
       "properties": [],
-      "x": 1032.6671142578125,
-      "y": 126.34602355957031
+      "x": 803.2909545898438,
+      "y": 240.82118225097656
     },
     {
-      "class": "MakeStringFromVector3f",
+      "class": "PrintVector3f",
+      "id": "f75dc85f-7e34-40d5-b0ab-a699db2778d2",
       "properties": [],
-      "x": 742.3482055664063,
-      "y": 289.2586975097656
+      "x": 717.6976318359375,
+      "y": 441.9659423828125
     }
   ]
 }
