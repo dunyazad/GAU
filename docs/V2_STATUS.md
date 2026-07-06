@@ -22,8 +22,12 @@ v1 수준의 앱 UX 는 별도 축이며, 통합 후 다음이 채워졌다: 우
 
 ## v1 파리티 잔여 (앱 UX)
 
-- wasm 저작 UI: 소스 편집 -> clang 빌드 -> 클래스 자동 등록(타입 시그니처 포함).
-  현재 gau 는 클래스 정의 패널 + Reload 만 있고 소스 빌드는 외부 clang 필요.
+- ~~wasm 저작 UI~~ -- 완료. Wasm 패널의 Edit Function 이 공용 FunctionEditorDialog 를
+  열고, Build & Save 가 WasmBuild 파이프라인(WasmAuthoring: TypeRegistry 기반
+  gau_api.h 생성 + 타입 시그니처 스캔 + entry 브리지 생성 -> clang -> WasmHost
+  리로드 -> 클래스 등록)을 돌린다. v2 는 struct 파라미터가 단일 struct 핀으로
+  유지되고(FlatWasmContext 평탄화), void 반환은 exec 노드가 된다.
+  `wasm_authoring_tests` + 실전 E2E(clang, "10.00, 29.00, 0.01") 검증.
 - 미저장 변경 확인 다이얼로그 + 자동 저장/세션 복구 (v1 ConfirmSaveDialog 상당).
 - 노드 복사/붙여넣기, 링크 절단 등 v1 에만 있는 편의 기능 점검.
 
