@@ -265,7 +265,13 @@ private:
     std::vector<std::string> categoryOptions;
     std::vector<TypeOption> typeOptions;
     std::string classNameText;
+    // Data pins only: exec pins are category policy (ExecPinPolicy), not
+    // user input, so the dialog never shows them.
     std::vector<PinDef> pins;
+    // Exec outputs the edited class already had (e.g. Branch-style
+    // True/False authored via directives); carried through the dialog
+    // invisibly so saving does not destroy them.
+    std::vector<PinDef> keptExecOutputs;
     std::vector<PropertyDraft> properties;
     Focus focus = Focus::None;
     int focusedPinIndex = -1;

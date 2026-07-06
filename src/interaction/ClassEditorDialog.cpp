@@ -104,11 +104,14 @@ void ClassEditorDialog::Open(float screenWidth, float screenHeight)
     categoryText = "Function";
     classNameText.clear();
     pins.clear();
+    keptExecOutputs.clear();
     properties.clear();
 
+    // Exec pins are added automatically from the category on save
+    // (ExecPinPolicy); the dialog edits data pins only.
     PinDef defaultPin;
     defaultPin.direction = PinDirection::Input;
-    defaultPin.type = PinType::Exec;
+    defaultPin.type = PinType::Float;
     pins.push_back(defaultPin);
 
     focus = Focus::ClassName;
@@ -167,7 +170,17 @@ void ClassEditorDialog::OpenForEdit(const NodeClass& target, float screenWidth, 
     editTarget = &target;
     classNameText = target.GetName();
     categoryText = target.GetCategory();
-    pins = target.GetPins();
+    // The dialog edits data pins only; exec outputs the class already
+    // has ride along invisibly so saving keeps them.
+    pins.clear();
+    keptExecOutputs.clear();
+    for (const PinDef& pin : target.GetPins()) {
+        if (pin.type != PinType::Exec) {
+            pins.push_back(pin);
+        } else if (pin.direction == PinDirection::Output) {
+            keptExecOutputs.push_back(pin);
+        }
+    }
 
     properties.clear();
     for (const PropertyDef& def : target.GetProperties()) {
@@ -780,7 +793,8 @@ void ClassEditorDialog::OpenDropdown(DialogDropdownKind kind, int rowIndex)
     dropdownHoverIndex = -1;
 
     if (kind == DialogDropdownKind::PinType) {
-        BuildTypeOptions(typeOptions, ALL_PIN_TYPES, PIN_TYPE_COUNT, false);
+        // Data types only: exec pins are category policy, never picked.
+        BuildTypeOptions(typeOptions, FIELD_BUILTIN_TYPES, 5, false);
         AppendObjectClassTypes(typeOptions);
     } else if (kind == DialogDropdownKind::PropertyType
                || kind == DialogDropdownKind::PropertyKeyType) {
@@ -1052,7 +1066,7 @@ void ClassEditorDialog::HandleMouseDown(float x, float y)
         PinDef pin;
         if (pins.empty()) {
             pin.direction = PinDirection::Input;
-            pin.type = PinType::Exec;
+            pin.type = PinType::Float;
         } else {
             pin = pins.back();
             pin.name = MakeUniquePinName(pin.name, pins);
@@ -1460,6 +1474,9 @@ ClassEditorAction ClassEditorDialog::TrySubmit()
     action.name = trimmedName;
     action.category = trimmedCategory;
     action.pins = pins;
+    for (const PinDef& execOut : keptExecOutputs) {
+        action.pins.push_back(execOut);
+    }
     action.properties = std::move(propertyDefs);
     action.editTarget = editTarget;
     Close();
