@@ -30,4 +30,8 @@ void DrawDragLink(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layou
 void DrawNodeOutline(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layout, NodeId node,
                      int r, int g, int b, float width);
 
+// The in-progress rubber-band selection rectangle (canvas coordinates,
+// any corner order).
+void DrawRubberBand(NVGcontext* vg, const Canvas& canvas, float x0, float y0, float x1, float y1);
+
 } // namespace gau::render

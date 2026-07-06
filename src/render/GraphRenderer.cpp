@@ -179,4 +179,22 @@ void DrawDragLink(NVGcontext* vg, const Canvas& canvas, const GraphLayout& layou
     nvgRestore(vg);
 }
 
+void DrawRubberBand(NVGcontext* vg, const Canvas& canvas, float x0, float y0, float x1, float y1)
+{
+    const float minX = x0 < x1 ? x0 : x1;
+    const float minY = y0 < y1 ? y0 : y1;
+    const float maxX = x0 > x1 ? x0 : x1;
+    const float maxY = y0 > y1 ? y0 : y1;
+    const Vec2 a = canvas.CanvasToScreen(Vec2{minX, minY});
+    const Vec2 b = canvas.CanvasToScreen(Vec2{maxX, maxY});
+
+    nvgBeginPath(vg);
+    nvgRect(vg, a.x, a.y, b.x - a.x, b.y - a.y);
+    nvgFillColor(vg, nvgRGBA(255, 180, 40, 26));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBA(255, 180, 40, 200));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+}
+
 } // namespace gau::render

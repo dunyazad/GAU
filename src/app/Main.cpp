@@ -1642,6 +1642,10 @@ int main()
         if (fsm.IsDraggingLink()) {
             render::DrawDragLink(vg, canvas, layout, fsm.DragLinkPin(), fsm.DragX(), fsm.DragY());
         }
+        if (fsm.IsRubberBanding()) {
+            render::DrawRubberBand(vg, canvas, fsm.BandX0(), fsm.BandY0(), fsm.BandX1(),
+                                   fsm.BandY1());
+        }
         for (NodeId bp : breakpoints) {
             render::DrawNodeOutline(vg, canvas, layout, bp, 220, 50, 50, 2.0f);
         }
